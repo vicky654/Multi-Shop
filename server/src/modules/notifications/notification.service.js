@@ -1,0 +1,75 @@
+const Notification  = require('./notification.model');
+const Product       = require('../products/product.model');
+
+// ── CRUD ──────────────────────────────────────────────────────────────────────
+const getNotifications = async (userId, { limit = 30, unreadOnly = false }) => {
+  const filter = { userId };
+  if (unreadOnly === 'true' || unreadOnly === true) filter.read = false;
+
+  const [notifications, unreadCount] = await Promise.all([
+    Notification.find(filter).sort({ createdAt: -1 }).limit(parseInt(limit)),
+    Notification.countDocuments({ userId, read: false }),
+  ]);
+
+  return { notifications, unreadCount };
+};
+
+const markRead = async (userId, ids) => {
+  const filter = { userId };
+  if (ids && ids.length) filter._id = { $in: ids };
+  await Notification.updateMany(filter, { read: true });
+};
+
+const markAllRead = async (userId) => {
+  await Notification.updateMany({ userId }, { read: true });
+};
+
+const deleteNotification = async (userId, id) => {
+  return Notification.findOneAndDelete({ _id: id, userId });
+};
+
+const clearAll = async (userId) => {
+  return Notification.deleteMany({ userId });
+};
+
+// ── Create a notification ─────────────────────────────────────────────────────
+const createNotification = async (data) => {
+  return Notification.create(data);
+};
+
+// ── Auto-generate low stock notifications ─────────────────────────────────────
+const generateLowStockNotifications = async (user) => {
+  const shopFilter = user.role !== 'super_admin'
+    ? { shopId: { $in: user.shops } }
+    : {};
+
+  const lowStock = await Product.find({
+    isActive: true,
+    ...shopFilter,
+    $expr: { $lte: ['$stock', '$lowStockThreshold'] },
+  }).limit(20);
+
+  if (!lowStock.length) return [];
+
+  const notifications = await Promise.all(
+    lowStock.map((p) =>
+      Notification.create({
+        userId:  user._id,
+        ownerId: user.ownerId || user._id,
+        shopId:  p.shopId,
+        type:    'low_stock',
+        title:   'Low Stock Alert',
+        message: `${p.name} has only ${p.stock} ${p.unit || 'pcs'} left`,
+        link:    '/inventory',
+        icon:    '⚠️',
+      })
+    )
+  );
+
+  return notifications;
+};
+
+module.exports = {
+  getNotifications, markRead, markAllRead, deleteNotification, clearAll,
+  createNotification, generateLowStockNotifications,
+};
