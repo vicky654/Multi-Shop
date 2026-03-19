@@ -31,4 +31,10 @@ const paymentBreakdown = asyncHandler(async (req, res) => {
   success(res, { breakdown: data }, 'Payment breakdown');
 });
 
-module.exports = { dashboard, salesTrend, bestSellers, profitLoss, paymentBreakdown };
+// GET /reports/summary — quick overview alias (used by System Test + external consumers)
+const summary = asyncHandler(async (req, res) => {
+  const data = await reportService.getDashboardSummary(req.user, req.query.shopId);
+  success(res, data, 'Summary');
+});
+
+module.exports = { dashboard, salesTrend, bestSellers, profitLoss, paymentBreakdown, summary };

@@ -6,6 +6,7 @@ const { allowRoles } = require('../../middlewares/role.middleware');
 router.use(protect);
 router.use(allowRoles('super_admin', 'owner', 'manager'));
 
+router.get('/summary',           ctrl.summary);          // quick overview alias
 router.get('/dashboard',         ctrl.dashboard);
 router.get('/sales-trend',       ctrl.salesTrend);
 router.get('/best-sellers',      ctrl.bestSellers);

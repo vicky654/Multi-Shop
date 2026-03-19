@@ -119,9 +119,8 @@ const TESTS = [
         label: 'GET /health',
         fn: async () => {
           const { default: axios } = await import('axios');
-          return axios.get(
-            (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace('/api', '') + '/api/health'
-          );
+          const base = (import.meta.env.VITE_API_URL || 'http://localhost:5001').replace(/\/api$/, '');
+          return axios.get(`${base}/api/health`);
         },
       },
     ],
@@ -142,10 +141,14 @@ export default function SystemTest() {
     setResult(item.id, STATUS.running);
     try {
       const res = await item.fn();
-      setResult(item.id, STATUS.pass, `${res?.status || 200} OK`);
+      // For health check (raw axios): res.status is the HTTP code
+      // For api calls (intercepted): res is already res.data, so fallback to 200
+      const code = res?.status && typeof res.status === 'number' ? res.status : 200;
+      setResult(item.id, STATUS.pass, `${code} OK`);
     } catch (err) {
-      const msg = err?.response?.data?.message || err?.message || 'Unknown error';
-      const code = err?.response?.status || 'ERR';
+      // axios interceptor preserves err.status and err.response
+      const code = err?.status || err?.response?.status || 'ERR';
+      const msg  = err?.response?.data?.message || err?.message || 'Unknown error';
       setResult(item.id, STATUS.fail, `${code}: ${msg}`);
     }
   };

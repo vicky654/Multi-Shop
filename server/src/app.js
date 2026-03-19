@@ -17,17 +17,34 @@ const aiRoutes            = require('./modules/ai/ai.routes');
 
 const app = express();
 
-// ── Middleware ─────────────────────────────────────────────────────────────────
+// ── CORS — allow localhost dev + any configured production URL ─────────────────
+const ALLOWED_ORIGINS = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://localhost:5001',
+  // Production frontends — add your Vercel / Netlify URL in CLIENT_URL env var
+  // e.g. CLIENT_URL=https://multi-shop-tawny.vercel.app
+  ...(process.env.CLIENT_URL ? process.env.CLIENT_URL.split(',').map((u) => u.trim()) : []),
+];
+
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, Postman, server-to-server)
+    if (!origin) return callback(null, true);
+    if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+    callback(new Error(`CORS: origin "${origin}" not allowed`));
+  },
   credentials: true,
 }));
+
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true }));
-if (process.env.NODE_ENV === 'development') app.use(morgan('dev'));
+if (process.env.NODE_ENV !== 'production') app.use(morgan('dev'));
 
-// ── Health check ───────────────────────────────────────────────────────────────
-app.get('/api/health', (_req, res) => res.json({ status: 'ok', version: '2.1', timestamp: new Date() }));
+// ── Root + Health ──────────────────────────────────────────────────────────────
+app.get('/',          (_req, res) => res.json({ message: 'MultiShop API is running', version: '3.0' }));
+app.get('/api',       (_req, res) => res.json({ message: 'MultiShop API is running', version: '3.0' }));
+app.get('/api/health',(_req, res) => res.json({ status: 'ok', version: '3.0', timestamp: new Date() }));
 
 // ── Routes ─────────────────────────────────────────────────────────────────────
 app.use('/api/auth',          authRoutes);

@@ -15,7 +15,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle 401 globally
+// Handle responses + errors globally
 api.interceptors.response.use(
   (res) => res.data,
   (err) => {
@@ -25,7 +25,11 @@ api.interceptors.response.use(
     }
     const message =
       err.response?.data?.message || err.message || 'Something went wrong';
-    return Promise.reject(new Error(message));
+    // Preserve the HTTP status so callers (e.g. SystemTest) can display it
+    const error = new Error(message);
+    error.status   = err.response?.status;
+    error.response = err.response;          // keep original response reference
+    return Promise.reject(error);
   }
 );
 
