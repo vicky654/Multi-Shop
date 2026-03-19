@@ -14,6 +14,7 @@ export default function Login() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    console.log('Login page rendered',login);
     try {
       await login(form);
       toast.success('Login successful!');
