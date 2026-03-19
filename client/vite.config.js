@@ -7,7 +7,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:5001',
+        target: 'https://multishop-backend-9jbg.onrender.com',
         changeOrigin: true,
       },
     },
