@@ -119,7 +119,7 @@ const TESTS = [
         label: 'GET /health',
         fn: async () => {
           const { default: axios } = await import('axios');
-          const base = (import.meta.env.VITE_API_URL || 'http://localhost:5001').replace(/\/api$/, '');
+          const base = (import.meta.env.VITE_API_URL || 'https://multishop-backend-9jbg.onrender.com').replace(/\/api$/, '');
           return axios.get(`${base}/api/health`);
         },
       },
