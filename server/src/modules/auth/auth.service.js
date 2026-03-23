@@ -24,14 +24,34 @@ const register = async ({ name, email, password, role = 'owner', phone }) => {
 };
 
 const login = async ({ email, password }) => {
+  const DEV = process.env.NODE_ENV !== 'production';
+
+  // ── 1. DB lookup ────────────────────────────────────────────────────────────
+  if (DEV) console.log('🔍 Finding user:', email);
   const user = await User.findOne({ email }).select('+password');
-  if (!user || !user.isActive)
+  if (DEV) console.log('👤 User found:', user ? user.email : 'NOT FOUND');
+
+  if (!user || !user.isActive) {
+    if (DEV) console.log('❌ Login failed — user not found or inactive');
     throw Object.assign(new Error('Invalid credentials'), { status: 401 });
+  }
 
+  // ── 2. Password check ───────────────────────────────────────────────────────
+  // NOTE: logs below are DEV-only and must never reach production
+  if (DEV) console.log('🔑 Entered password:', password);
+  if (DEV) console.log('🔒 Stored hash:', user.password);
   const ok = await user.comparePassword(password);
-  if (!ok) throw Object.assign(new Error('Invalid credentials'), { status: 401 });
+  if (DEV) console.log('✅ Password match:', ok);
 
+  if (!ok) {
+    if (DEV) console.log('❌ Login failed — wrong password');
+    throw Object.assign(new Error('Invalid credentials'), { status: 401 });
+  }
+
+  // ── 3. Token + permissions ──────────────────────────────────────────────────
   const token = signToken({ id: user._id, role: user.role });
+  if (DEV) console.log('🎟️  Generated token:', token.slice(0, 20) + '…');
+
   const userWithPerms = await withPermissions(user);
   return { user: userWithPerms, token };
 };

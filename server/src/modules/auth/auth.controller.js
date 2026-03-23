@@ -10,7 +10,13 @@ const register = asyncHandler(async (req, res) => {
 
 const login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('📩 Login request body:', { email, password: '***' });
+  }
   const result = await authService.login({ email, password });
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('📤 Sending response:', { success: true, user: result.user?.email, token: result.token?.slice(0, 20) + '…' });
+  }
   success(res, result, 'Logged in successfully');
 });
 

@@ -8,6 +8,12 @@ const api = axios.create({
   timeout: 15000,
 });
 
+if (import.meta.env.DEV) {
+  console.log('API baseURL:', api.defaults.baseURL);
+}
+
+
+
 // Attach token automatically
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('ms_token');
@@ -19,7 +25,13 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res.data,
   (err) => {
-    if (err.response?.status === 401) {
+    // Don't redirect to /login when the failing request IS the login/register call —
+    // that would cause a silent page reload instead of showing the error toast.
+    const isAuthEndpoint =
+      err.config?.url?.includes('/auth/login') ||
+      err.config?.url?.includes('/auth/register');
+
+    if (err.response?.status === 401 && !isAuthEndpoint) {
       localStorage.removeItem('ms_token');
       window.location.href = '/login';
     }

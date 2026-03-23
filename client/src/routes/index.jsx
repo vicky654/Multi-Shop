@@ -16,6 +16,8 @@ import Expenses    from '../pages/Expenses';
 import Reports     from '../pages/Reports';
 import Settings    from '../pages/Settings';
 import AiInsights  from '../pages/AiInsights';
+import Roles       from '../pages/Roles';
+import Users       from '../pages/Users';
 import SystemTest  from '../pages/SystemTest';
 import LoadingSpinner from '../components/LoadingSpinner';
 
@@ -70,11 +72,13 @@ export default function AppRoutes() {
           <Route path="/reports"      element={<Reports />} />
           <Route path="/settings"     element={<Settings />} />
           <Route path="/ai-insights"  element={<AiInsights />} />
+          <Route path="/roles"        element={<Roles />} />
+          <Route path="/users"        element={<Users />} />
           <Route path="/system-test"  element={<SystemTest />} />
         </Route>
       </Route>
 
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   );
 }

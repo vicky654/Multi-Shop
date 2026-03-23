@@ -9,18 +9,31 @@ const useAuthStore = create((set, get) => ({
 
   login: async (credentials) => {
     set({ loading: true });
-    const res = await authApi.login(credentials);
-    localStorage.setItem('ms_token', res.data.token);
-    set({ user: res.data.user, token: res.data.token, loading: false });
-    return res.data;
+    try {
+      const res = await authApi.login(credentials);
+      console.log('Login API response:', res);
+      if (!res?.data?.token) throw new Error('No token received from server');
+      localStorage.setItem('ms_token', res.data.token);
+      set({ user: res.data.user, token: res.data.token, loading: false });
+      return res.data;
+    } catch (err) {
+      set({ loading: false });
+      throw err;
+    }
   },
 
   register: async (data) => {
     set({ loading: true });
-    const res = await authApi.register(data);
-    localStorage.setItem('ms_token', res.data.token);
-    set({ user: res.data.user, token: res.data.token, loading: false });
-    return res.data;
+    try {
+      const res = await authApi.register(data);
+      if (!res?.data?.token) throw new Error('No token received from server');
+      localStorage.setItem('ms_token', res.data.token);
+      set({ user: res.data.user, token: res.data.token, loading: false });
+      return res.data;
+    } catch (err) {
+      set({ loading: false });
+      throw err;
+    }
   },
 
   fetchMe: async () => {
@@ -35,6 +48,10 @@ const useAuthStore = create((set, get) => ({
 
   logout: () => {
     localStorage.removeItem('ms_token');
+    // Reset setup flags so the next user starts with a clean slate
+    import('./setupStore').then(({ default: useSetupStore }) => {
+      useSetupStore.getState().reset();
+    });
     set({ user: null, token: null });
   },
 

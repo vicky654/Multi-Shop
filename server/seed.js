@@ -8,8 +8,6 @@
 
 require('dotenv').config();
 const mongoose = require('mongoose');
-const bcrypt   = require('bcryptjs');
-
 // ── Models ────────────────────────────────────────────────────────
 const User         = require('./src/modules/auth/auth.model');
 const Shop         = require('./src/modules/shops/shop.model');
@@ -102,18 +100,15 @@ async function main() {
 
   // ── 2. Create Users ─────────────────────────────────────────────
   console.log('👥  Creating users …');
-  const [h_admin, h_owner, h_manager, h_staff] = await Promise.all([
-    bcrypt.hash('admin123',   12),
-    bcrypt.hash('owner123',   12),
-    bcrypt.hash('manager123', 12),
-    bcrypt.hash('staff123',   12),
-  ]);
+  // Pass plain-text passwords — the User model's pre('save') hook hashes them.
+  // Never pre-hash here: doing so causes double-hashing (bcrypt of a bcrypt hash),
+  // which makes bcrypt.compare() always return false at login.
 
   // Super Admin — platform-level access
   const superAdmin = await User.create({
     name: 'Super Admin',
     email: 'admin@multishop.com',
-    password: h_admin,
+    password: 'admin123',
     role: 'super_admin',
     phone: '9999900000',
     isActive: true,
@@ -124,7 +119,7 @@ async function main() {
   const owner = await User.create({
     name: 'Ravi Sharma',
     email: 'owner@multishop.com',
-    password: h_owner,
+    password: 'owner123',
     role: 'owner',
     phone: '9876543200',
     isActive: true,
@@ -135,7 +130,7 @@ async function main() {
   const manager = await User.create({
     name: 'Neha Kapoor',
     email: 'manager@multishop.com',
-    password: h_manager,
+    password: 'manager123',
     role: 'manager',
     phone: '9876543201',
     ownerId: owner._id,
@@ -147,7 +142,7 @@ async function main() {
   const billingStaff = await User.create({
     name: 'Arjun Mehta',
     email: 'billing@multishop.com',
-    password: h_staff,
+    password: 'staff123',
     role: 'billing_staff',
     phone: '9876543202',
     ownerId: owner._id,
@@ -159,7 +154,7 @@ async function main() {
   const inventoryStaff = await User.create({
     name: 'Pooja Iyer',
     email: 'inventory@multishop.com',
-    password: h_staff,
+    password: 'staff123',
     role: 'inventory_staff',
     phone: '9876543203',
     ownerId: owner._id,

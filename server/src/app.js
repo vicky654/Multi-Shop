@@ -19,7 +19,7 @@ const app = express();
 
 // ── CORS — allow localhost dev + any configured production URL ─────────────────
 const ALLOWED_ORIGINS = [
-  'http://localhost:5173',
+  'http://localhost:4000',
   'http://localhost:3000',
   'http://localhost:5001',
   'https://multishop-backend-9jbg.onrender.com',

@@ -6,7 +6,8 @@ import {
   CheckCircle, ArrowRight, X, Sparkles,
 } from 'lucide-react';
 import { authApi } from '../api/auth.api';
-import useAuthStore from '../store/authStore';
+import useAuthStore  from '../store/authStore';
+import useSetupStore from '../store/setupStore';
 
 const STEPS = [
   {
@@ -50,16 +51,17 @@ const STEPS = [
 export default function Onboarding({ onClose }) {
   const [current, setCurrent] = useState(0);
   const [done, setDone] = useState(false);
-  const navigate = useNavigate();
-  const { user } = useAuthStore();
-  const setUser = useAuthStore((s) => s.fetchMe);
+  const navigate     = useNavigate();
+  const { user }     = useAuthStore();
+  const setUser      = useAuthStore((s) => s.fetchMe);
+  const dismissModal = useSetupStore((s) => s.dismissModal);
 
   const completeMutation = useMutation({
     mutationFn: () => authApi.completeOnboarding(),
     onSuccess: () => setUser(),
   });
 
-  const step = STEPS[current];
+  const step   = STEPS[current];
   const isLast = current === STEPS.length - 1;
 
   const handleAction = () => {
@@ -70,6 +72,7 @@ export default function Onboarding({ onClose }) {
   const handleNext = () => {
     if (isLast) {
       setDone(true);
+      dismissModal();
       completeMutation.mutate();
     } else {
       setCurrent((c) => c + 1);
@@ -77,6 +80,7 @@ export default function Onboarding({ onClose }) {
   };
 
   const handleSkip = () => {
+    dismissModal();          // mark modal as dismissed so it won't re-appear
     completeMutation.mutate();
     onClose?.();
   };
