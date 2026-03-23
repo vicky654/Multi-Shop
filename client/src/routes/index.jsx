@@ -16,6 +16,7 @@ import Expenses    from '../pages/Expenses';
 import Reports     from '../pages/Reports';
 import Settings    from '../pages/Settings';
 import AiInsights  from '../pages/AiInsights';
+import Campaigns   from '../pages/Campaigns';
 import Roles       from '../pages/Roles';
 import Users       from '../pages/Users';
 import AdminPanel  from '../pages/AdminPanel';
@@ -28,6 +29,8 @@ import ShopHome          from '../pages/shop/ShopHome';
 import ShopListing       from '../pages/shop/ShopListing';
 import ShopProductDetail from '../pages/shop/ShopProductDetail';
 import ShopCart          from '../pages/shop/ShopCart';
+import CustomerShop      from '../pages/shop/CustomerShop';
+import SlugProductDetail from '../pages/shop/SlugProductDetail';
 
 export default function AppRoutes() {
   const { fetchMe, token, initialized } = useAuthStore();
@@ -53,7 +56,12 @@ export default function AppRoutes() {
         <Route path="/register" element={<Register />} />
       </Route>
 
-      {/* ── Customer Shop (public) ── */}
+      {/* ── Slug-based public shop (e.g. /shop/vicky-fashion) ── */}
+      {/* Static sub-paths (/shop/products, /shop/cart) take priority over /:slug */}
+      <Route path="/shop/:slug"              element={<CustomerShop />} />
+      <Route path="/shop/:slug/product/:id"  element={<SlugProductDetail />} />
+
+      {/* ── Query-param shop (legacy / internal) ── */}
       <Route element={<ShopLayout />}>
         <Route path="/shop"                   element={<ShopHome />} />
         <Route path="/shop/products"          element={<ShopListing />} />
@@ -73,6 +81,7 @@ export default function AppRoutes() {
           <Route path="/reports"      element={<Reports />} />
           <Route path="/settings"     element={<Settings />} />
           <Route path="/ai-insights"  element={<AiInsights />} />
+          <Route path="/campaigns"    element={<Campaigns />} />
           <Route path="/roles"        element={<Roles />} />
           <Route path="/users"        element={<Users />} />
           <Route path="/admin"        element={<AdminPanel />} />

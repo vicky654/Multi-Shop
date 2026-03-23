@@ -3,11 +3,13 @@ import { Outlet } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { FlaskConical, X } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { usePushNotifications } from '../hooks/usePushNotifications';
 import { useQuery } from '@tanstack/react-query';
 import Sidebar    from '../components/Sidebar';
 import Header     from '../components/Header';
 import BottomNav  from '../components/BottomNav';
-import Onboarding from '../components/Onboarding';
+import Onboarding    from '../components/Onboarding';
+import OfflineBanner from '../components/OfflineBanner';
 import useShopStore  from '../store/shopStore';
 import useAuthStore  from '../store/authStore';
 import useSetupStore from '../store/setupStore';
@@ -20,6 +22,9 @@ import { salesApi }    from '../api/sales.api';
 export default function DashboardLayout() {
   const [sidebarOpen,    setSidebarOpen]    = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // Initialise Capacitor push notifications (no-op on web)
+  usePushNotifications();
 
   const { setShops, activeShop } = useShopStore();
   const user                     = useAuthStore((s) => s.user);
@@ -100,6 +105,8 @@ export default function DashboardLayout() {
 
       <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
         <Header onMenuClick={() => setSidebarOpen((v) => !v)} />
+
+        <OfflineBanner />
 
         {/* Demo Mode Banner */}
         {isDemoMode && activeShop && (

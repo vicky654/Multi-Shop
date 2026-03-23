@@ -1,6 +1,9 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { format } from 'date-fns';
-import { X, Printer, Download } from 'lucide-react';
+import { X, Printer, MessageCircle, Send, Loader2 } from 'lucide-react';
+import { useMutation } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
+import { campaignsApi } from '../api/campaigns.api';
 
 /**
  * Printable invoice modal.
@@ -8,6 +11,27 @@ import { X, Printer, Download } from 'lucide-react';
  */
 export default function InvoiceModal({ sale, onClose }) {
   const printRef = useRef();
+  const [waLink, setWaLink] = useState(null);
+
+  const receiptMut = useMutation({
+    mutationFn: (channel) => campaignsApi.sendReceipt({
+      shopId:     sale.shopId?._id || sale.shopId,
+      customerId: sale.customerId?._id || sale.customerId,
+      sale,
+      channel,
+    }),
+    onSuccess: (res, channel) => {
+      if (channel === 'whatsapp') {
+        const link = res.data.campaign?.whatsappLinks?.[0]?.url;
+        if (link) setWaLink(link);
+      } else {
+        toast.success('Receipt SMS sent!');
+      }
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const hasCustomer = !!(sale.customerId?._id || (typeof sale.customerId === 'string' && sale.customerId));
 
   if (!sale) return null;
 
@@ -60,7 +84,40 @@ export default function InvoiceModal({ sale, onClose }) {
         <div className="flex items-center justify-between p-5 border-b">
           <h2 className="font-bold text-gray-900 text-lg">Invoice — {sale.invoiceNumber}</h2>
           <div className="flex gap-2">
-            <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition">
+            {hasCustomer && (
+              <>
+                {waLink ? (
+                  <a
+                    href={waLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-semibold transition"
+                  >
+                    <MessageCircle className="w-4 h-4" /> Open WhatsApp
+                  </a>
+                ) : (
+                  <button
+                    onClick={() => receiptMut.mutate('whatsapp')}
+                    disabled={receiptMut.isPending}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-semibold transition disabled:opacity-60"
+                  >
+                    {receiptMut.isPending
+                      ? <Loader2 className="w-4 h-4 animate-spin" />
+                      : <MessageCircle className="w-4 h-4" />
+                    }
+                    WhatsApp
+                  </button>
+                )}
+                <button
+                  onClick={() => receiptMut.mutate('sms')}
+                  disabled={receiptMut.isPending}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-semibold transition disabled:opacity-60"
+                >
+                  <Send className="w-4 h-4" /> SMS
+                </button>
+              </>
+            )}
+            <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-900 text-white rounded-lg text-sm font-semibold transition">
               <Printer className="w-4 h-4" /> Print / PDF
             </button>
             <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition">

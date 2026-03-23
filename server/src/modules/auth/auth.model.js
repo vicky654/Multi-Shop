@@ -38,6 +38,8 @@ const userSchema = new mongoose.Schema(
     customRoleId: { type: mongoose.Schema.Types.ObjectId, ref: 'Role', default: null },
     // User preferences
     onboardingComplete: { type: Boolean, default: false },
+    // FCM device tokens for push notifications (max 5 per user)
+    deviceTokens: [{ type: String }],
   },
   { timestamps: true }
 );

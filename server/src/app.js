@@ -2,6 +2,7 @@ const express = require('express');
 const cors    = require('cors');
 const morgan  = require('morgan');
 const { errorHandler, notFound } = require('./middlewares/error.middleware');
+const sanitize                   = require('./middlewares/sanitize.middleware');
 
 // Route imports
 const authRoutes          = require('./modules/auth/auth.routes');
@@ -16,6 +17,11 @@ const notificationRoutes  = require('./modules/notifications/notification.routes
 const aiRoutes            = require('./modules/ai/ai.routes');
 const adminRoutes         = require('./modules/admin/admin.routes');
 const demoRoutes          = require('./modules/demo/demo.routes');
+const pushRoutes          = require('./modules/push/push.routes');
+const campaignRoutes      = require('./modules/campaigns/campaign.routes');
+const automationRoutes    = require('./modules/campaigns/automation.routes');
+const scheduler           = require('./modules/campaigns/scheduler');
+const notifyRoutes        = require('./modules/notify/notify.routes');
 
 const app = express();
 
@@ -42,6 +48,7 @@ app.use(cors({
 
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true }));
+app.use(sanitize);
 if (process.env.NODE_ENV !== 'production') app.use(morgan('dev'));
 
 // ── Root + Health ──────────────────────────────────────────────────────────────
@@ -62,6 +69,12 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/ai',            aiRoutes);
 app.use('/api/admin',         adminRoutes);
 app.use('/api/demo',          demoRoutes);
+app.use('/api/push',          pushRoutes);
+app.use('/api/campaigns',     campaignRoutes);
+app.use('/api/automations',   automationRoutes);
+app.use('/api/notify',        notifyRoutes);
+
+scheduler.start();
 
 // ── Error handling ─────────────────────────────────────────────────────────────
 app.use(notFound);

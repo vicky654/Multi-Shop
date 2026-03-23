@@ -1,5 +1,6 @@
 const Notification  = require('./notification.model');
 const Product       = require('../products/product.model');
+const pushService   = require('../push/push.service');
 
 // ── CRUD ──────────────────────────────────────────────────────────────────────
 const getNotifications = async (userId, { limit = 30, unreadOnly = false }) => {
@@ -32,9 +33,24 @@ const clearAll = async (userId) => {
   return Notification.deleteMany({ userId });
 };
 
-// ── Create a notification ─────────────────────────────────────────────────────
+// ── Create a notification + fire FCM push ────────────────────────────────────
 const createNotification = async (data) => {
-  return Notification.create(data);
+  const notification = await Notification.create(data);
+
+  // Fire-and-forget FCM push — never block the caller
+  if (data.userId) {
+    pushService.sendToUser(data.userId, {
+      title: data.title,
+      body:  data.message,
+      data:  {
+        type:           data.type  || 'info',
+        link:           data.link  || '',
+        notificationId: String(notification._id),
+      },
+    }).catch(() => {}); // swallow — push failure must not break the request
+  }
+
+  return notification;
 };
 
 // ── Auto-generate low stock notifications ─────────────────────────────────────

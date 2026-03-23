@@ -2,10 +2,11 @@ const router = require('express').Router();
 const ctrl = require('./auth.controller');
 const { protect } = require('../../middlewares/auth.middleware');
 const { allowRoles } = require('../../middlewares/role.middleware');
+const { authLimiter } = require('../../middlewares/rateLimit.middleware');
 
-// Public
-router.post('/register', ctrl.register);
-router.post('/login', ctrl.login);
+// Public (rate-limited)
+router.post('/register', authLimiter, ctrl.register);
+router.post('/login',    authLimiter, ctrl.login);
 
 // Protected
 router.get('/me',              protect, ctrl.getMe);

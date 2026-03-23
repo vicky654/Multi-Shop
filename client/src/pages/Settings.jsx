@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Edit2, Trash2, Store, Users } from 'lucide-react';
+import { Plus, Edit2, Trash2, Store, Users, Link2, ExternalLink, Bell, MessageCircle, Send } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { shopsApi } from '../api/shops.api';
 import { authApi } from '../api/auth.api';
@@ -13,14 +13,31 @@ const SHOP_TYPES = ['clothes', 'toys', 'shoes', 'gifts', 'electronics', 'grocery
 const STAFF_ROLES = ['manager', 'billing_staff', 'inventory_staff'];
 const ROLE_LABELS = { manager: 'Manager', billing_staff: 'Billing Staff', inventory_staff: 'Inventory Staff' };
 
-const EMPTY_SHOP  = { name: '', type: 'clothes', address: '', phone: '', email: '', currency: '₹', taxRate: 0 };
+const EMPTY_SHOP  = { name: '', type: 'clothes', address: '', phone: '', email: '', currency: '₹', taxRate: 0, description: '', logo: '', banner: '' };
 const EMPTY_STAFF = { name: '', email: '', password: '', role: 'billing_staff', phone: '', shopIds: [] };
 
 export default function Settings() {
   const qc = useQueryClient();
   const { can } = usePermissions();
   const user = useAuthStore((s) => s.user);
-  const { shops } = useShopStore();
+  const { shops, activeShop } = useShopStore();
+  const EMPTY_NOTIF = { ownerWhatsapp: '', smsApiKey: '', smsSenderId: '', dailySummaryEnabled: false };
+  const [notifForm,  setNotifForm]  = useState(EMPTY_NOTIF);
+
+  // Sync notifForm when active shop changes
+  useEffect(() => {
+    if (activeShop?.notifSettings) {
+      setNotifForm({ ...EMPTY_NOTIF, ...activeShop.notifSettings });
+    } else {
+      setNotifForm(EMPTY_NOTIF);
+    }
+  }, [activeShop?._id]);
+
+  const updateNotifMut = useMutation({
+    mutationFn: (data) => shopsApi.update(activeShop._id, { notifSettings: data }),
+    onSuccess: () => { qc.invalidateQueries(['shops']); toast.success('Notification settings saved'); },
+    onError: (e) => toast.error(e.message),
+  });
 
   const [shopModal, setShopModal] = useState(false);
   const [staffModal, setStaffModal] = useState(false);
@@ -107,6 +124,18 @@ export default function Settings() {
                 <div>
                   <p className="font-medium text-gray-900">{shop.name}</p>
                   <p className="text-xs text-gray-500 capitalize">{shop.type} · {shop.address || 'No address'}</p>
+                  {shop.slug && (
+                    <a
+                      href={`/shop/${shop.slug}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700 mt-0.5 font-medium"
+                    >
+                      <Link2 className="w-3 h-3" />
+                      /shop/{shop.slug}
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
                 </div>
               </div>
               <div className="flex gap-2">
@@ -156,6 +185,89 @@ export default function Settings() {
         </section>
       )}
 
+      {/* ── Notification Settings ── */}
+      {can('settings') && activeShop && (
+        <section className="bg-white rounded-2xl border border-gray-200 p-6">
+          <div className="flex items-center gap-2 mb-5">
+            <Bell className="w-5 h-5 text-blue-600" />
+            <div>
+              <h2 className="font-semibold text-gray-900 text-lg">Notification Settings</h2>
+              <p className="text-xs text-gray-400 mt-0.5">For <span className="font-semibold text-gray-600">{activeShop.name}</span></p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {/* WhatsApp */}
+            <div className="p-4 border border-green-200 rounded-xl bg-green-50/50">
+              <div className="flex items-center gap-2 mb-3">
+                <MessageCircle className="w-4 h-4 text-green-600" />
+                <p className="text-sm font-semibold text-green-800">WhatsApp (Daily Summary)</p>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600">Owner WhatsApp number</label>
+                <input
+                  value={notifForm.ownerWhatsapp}
+                  onChange={(e) => setNotifForm((f) => ({ ...f, ownerWhatsapp: e.target.value }))}
+                  placeholder="9876543210 (10-digit)"
+                  className="mt-1.5 w-full h-9 text-sm border border-gray-200 rounded-lg px-3 focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">Daily summaries will be sent as a WhatsApp message to this number.</p>
+              </div>
+              <label className="flex items-center gap-2 mt-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={notifForm.dailySummaryEnabled}
+                  onChange={(e) => setNotifForm((f) => ({ ...f, dailySummaryEnabled: e.target.checked }))}
+                  className="rounded accent-green-600"
+                />
+                <span className="text-sm text-gray-700">Enable automatic daily summary</span>
+              </label>
+            </div>
+
+            {/* SMS */}
+            <div className="p-4 border border-blue-200 rounded-xl bg-blue-50/50">
+              <div className="flex items-center gap-2 mb-3">
+                <Send className="w-4 h-4 text-blue-600" />
+                <p className="text-sm font-semibold text-blue-800">SMS (Fast2SMS — India)</p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="text-xs font-medium text-gray-600">Fast2SMS API Key</label>
+                  <input
+                    type="password"
+                    value={notifForm.smsApiKey}
+                    onChange={(e) => setNotifForm((f) => ({ ...f, smsApiKey: e.target.value }))}
+                    placeholder="Paste your Fast2SMS API key"
+                    className="mt-1.5 w-full h-9 text-sm border border-gray-200 rounded-lg px-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600">Sender ID (optional)</label>
+                  <input
+                    value={notifForm.smsSenderId}
+                    onChange={(e) => setNotifForm((f) => ({ ...f, smsSenderId: e.target.value }))}
+                    placeholder="FSTSMS"
+                    maxLength={6}
+                    className="mt-1.5 w-full h-9 text-sm border border-gray-200 rounded-lg px-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-gray-400 mt-2">
+                Get your API key at <span className="font-mono text-blue-600">fast2sms.com</span>. Used for SMS receipts and customer campaigns.
+              </p>
+            </div>
+
+            <button
+              onClick={() => updateNotifMut.mutate(notifForm)}
+              disabled={updateNotifMut.isPending}
+              className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-semibold rounded-lg transition text-sm"
+            >
+              {updateNotifMut.isPending ? 'Saving…' : 'Save Notification Settings'}
+            </button>
+          </div>
+        </section>
+      )}
+
       {/* Shop modal */}
       <Modal open={shopModal} onClose={() => setShopModal(false)} title={editShop ? 'Edit Shop' : 'New Shop'}>
         <form onSubmit={handleShopSubmit} className="space-y-4">
@@ -186,7 +298,30 @@ export default function Settings() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Tax Rate (%)</label>
               <input type="number" min="0" max="100" value={shopForm.taxRate} onChange={(e) => setShopForm((f) => ({ ...f, taxRate: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+              <textarea rows={2} value={shopForm.description || ''} onChange={(e) => setShopForm((f) => ({ ...f, description: e.target.value }))} placeholder="Tell customers about your shop…" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Logo URL</label>
+              <input value={shopForm.logo || ''} onChange={(e) => setShopForm((f) => ({ ...f, logo: e.target.value }))} placeholder="https://…" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Banner URL</label>
+              <input value={shopForm.banner || ''} onChange={(e) => setShopForm((f) => ({ ...f, banner: e.target.value }))} placeholder="https://… (hero background)" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
           </div>
+          {editShop?.slug && (
+            <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg border border-blue-100">
+              <Link2 className="w-4 h-4 text-blue-500 shrink-0" />
+              <div>
+                <p className="text-xs font-semibold text-blue-800">Your public shop URL</p>
+                <a href={`/shop/${editShop.slug}`} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline">
+                  /shop/{editShop.slug}
+                </a>
+              </div>
+            </div>
+          )}
           <button type="submit" disabled={createShopMut.isPending || updateShopMut.isPending} className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-semibold rounded-lg transition">Save Shop</button>
         </form>
       </Modal>

@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Shield, Users, Store, Plus, ChevronRight, ChevronLeft,
   Check, Eye, EyeOff, ToggleLeft, ToggleRight, Building2,
-  TrendingUp, UserCheck, AlertCircle, X,
+  TrendingUp, UserCheck, AlertCircle, X, Search,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { adminApi } from '../api/admin.api';
@@ -222,6 +222,7 @@ function CreateOwnerWizard({ onClose, onSuccess }) {
 export default function AdminPanel() {
   const [tab,        setTab]        = useState('owners');
   const [showWizard, setShowWizard] = useState(false);
+  const [search,     setSearch]     = useState('');
   const qc = useQueryClient();
 
   const { data: overviewData } = useQuery({
@@ -251,8 +252,13 @@ export default function AdminPanel() {
   });
 
   const overview = overviewData?.data || {};
-  const owners   = ownersData?.data?.owners || [];
-  const shops    = shopsData?.data?.shops   || [];
+  const q        = search.toLowerCase();
+  const owners   = (ownersData?.data?.owners || []).filter((o) =>
+    !q || o.name?.toLowerCase().includes(q) || o.email?.toLowerCase().includes(q)
+  );
+  const shops    = (shopsData?.data?.shops || []).filter((s) =>
+    !q || s.name?.toLowerCase().includes(q) || s.type?.toLowerCase().includes(q)
+  );
 
   return (
     <div className="space-y-6">
@@ -284,23 +290,34 @@ export default function AdminPanel() {
         <StatCard label="Staff Members"  value={overview.totalStaff}       icon={Users}       color="border-amber-100 bg-amber-50/50" />
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 p-1 bg-gray-100 rounded-xl w-fit">
-        {[
-          { key: 'owners', label: 'Owners', icon: Users },
-          { key: 'shops',  label: 'Shops',  icon: Building2 },
-        ].map(({ key, label, icon: Icon }) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-              tab === key ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <Icon className="w-4 h-4" />
-            {label}
-          </button>
-        ))}
+      {/* Search + Tabs row */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="flex gap-1 p-1 bg-gray-100 rounded-xl w-fit shrink-0">
+          {[
+            { key: 'owners', label: 'Owners', icon: Users },
+            { key: 'shops',  label: 'Shops',  icon: Building2 },
+          ].map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => { setTab(key); setSearch(''); }}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                tab === key ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="relative flex-1 max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={`Search ${tab}…`}
+            className="w-full pl-9 pr-3 h-10 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
+          />
+        </div>
       </div>
 
       {/* Owners Table */}
