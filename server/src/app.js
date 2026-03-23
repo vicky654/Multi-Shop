@@ -14,6 +14,8 @@ const reportRoutes        = require('./modules/reports/report.routes');
 const roleRoutes          = require('./modules/roles/role.routes');
 const notificationRoutes  = require('./modules/notifications/notification.routes');
 const aiRoutes            = require('./modules/ai/ai.routes');
+const adminRoutes         = require('./modules/admin/admin.routes');
+const demoRoutes          = require('./modules/demo/demo.routes');
 
 const app = express();
 
@@ -58,6 +60,8 @@ app.use('/api/reports',       reportRoutes);
 app.use('/api/roles',         roleRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/ai',            aiRoutes);
+app.use('/api/admin',         adminRoutes);
+app.use('/api/demo',          demoRoutes);
 
 // ── Error handling ─────────────────────────────────────────────────────────────
 app.use(notFound);

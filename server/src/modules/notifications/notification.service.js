@@ -69,7 +69,31 @@ const generateLowStockNotifications = async (user) => {
   return notifications;
 };
 
+// ── Notify all staff + owner when a new product is added ─────────────────────
+const notifyShopStaff = async (product, owner) => {
+  const User = require('../auth/auth.model');
+  const staff = await User.find({ ownerId: owner._id, isActive: true }).select('_id').lean();
+  const targets = [owner._id, ...staff.map((u) => u._id)];
+
+  const notifications = await Promise.all(
+    targets.map((userId) =>
+      Notification.create({
+        userId,
+        ownerId: owner._id,
+        shopId:  product.shopId,
+        type:    'new_product',
+        title:   'New Product Added',
+        message: `${product.name} (${product.category}) is now in inventory — Stock: ${product.stock} ${product.unit || 'pcs'}`,
+        link:    '/inventory',
+        icon:    '📦',
+      })
+    )
+  );
+
+  return notifications;
+};
+
 module.exports = {
   getNotifications, markRead, markAllRead, deleteNotification, clearAll,
-  createNotification, generateLowStockNotifications,
+  createNotification, generateLowStockNotifications, notifyShopStaff,
 };

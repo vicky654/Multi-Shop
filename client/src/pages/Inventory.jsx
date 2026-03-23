@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Plus, Search, Edit2, Trash2, Package, AlertTriangle,
+  Plus, Search, Edit2, Trash2, AlertTriangle,
   Download, RefreshCw,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -11,6 +11,7 @@ import useSetupStore from '../store/setupStore';
 import DataTable from '../components/DataTable';
 import Modal from '../components/Modal';
 import { ProductForm, EMPTY_FORM } from '../components/ProductForm';
+import ImageCarousel from '../components/ImageCarousel';
 
 export default function Inventory() {
   const qc = useQueryClient();
@@ -91,16 +92,11 @@ export default function Inventory() {
   const columns = [
     { key: 'name', label: 'Product', render: (v, r) => (
       <div className="flex items-center gap-3">
-        {(r.images?.[0] || r.image) ? (
-          <img src={r.images?.[0] || r.image} alt="" className="w-10 h-10 rounded-lg object-cover border border-gray-200 shrink-0" />
-        ) : (
-          <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
-            <Package className="w-5 h-5 text-gray-400" />
-          </div>
-        )}
+        <ImageCarousel images={r.images?.length ? r.images : (r.image ? [r.image] : [])} compact name={v} />
         <div className="min-w-0">
           <p className="font-medium text-gray-900 truncate">{v}</p>
           <p className="text-xs text-gray-400">{r.sku || r.barcode || '—'}</p>
+          {r.isDemo && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 rounded font-medium">Demo</span>}
         </div>
       </div>
     )},

@@ -1,13 +1,16 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Store, Package, ShoppingCart, BarChart2,
-  CheckCircle, ArrowRight, X, Sparkles,
+  CheckCircle, ArrowRight, X, Sparkles, FlaskConical,
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { authApi } from '../api/auth.api';
+import { demoApi }  from '../api/demo.api';
 import useAuthStore  from '../store/authStore';
 import useSetupStore from '../store/setupStore';
+import useShopStore  from '../store/shopStore';
 
 const STEPS = [
   {
@@ -52,13 +55,31 @@ export default function Onboarding({ onClose }) {
   const [current, setCurrent] = useState(0);
   const [done, setDone] = useState(false);
   const navigate     = useNavigate();
-  const { user }     = useAuthStore();
   const setUser      = useAuthStore((s) => s.fetchMe);
   const dismissModal = useSetupStore((s) => s.dismissModal);
+
+  const { activeShop } = useShopStore();
+  const qc = useQueryClient();
 
   const completeMutation = useMutation({
     mutationFn: () => authApi.completeOnboarding(),
     onSuccess: () => setUser(),
+  });
+
+  const demoMutation = useMutation({
+    mutationFn: () => demoApi.seed(activeShop?._id),
+    onSuccess: (res) => {
+      useSetupStore.setState({ isDemoMode: true });
+      qc.invalidateQueries(['products']);
+      qc.invalidateQueries(['customers']);
+      qc.invalidateQueries(['setup-check', activeShop?._id]);
+      const { products = 0, customers = 0 } = res?.data || {};
+      toast.success(`Demo loaded: ${products} products + ${customers} customers`);
+      dismissModal();
+      completeMutation.mutate();
+      onClose?.();
+    },
+    onError: (e) => toast.error(e.message || 'Failed to load demo data'),
   });
 
   const step   = STEPS[current];
@@ -165,6 +186,22 @@ export default function Onboarding({ onClose }) {
             >
               {isLast ? 'Finish Setup' : 'Next Step'}
             </button>
+
+            {/* Demo data option — only shown when a shop exists */}
+            {current === 0 && activeShop && (
+              <button
+                onClick={() => demoMutation.mutate()}
+                disabled={demoMutation.isPending}
+                className="w-full py-2.5 border border-dashed border-amber-400 text-amber-700 hover:bg-amber-50 rounded-xl font-medium text-sm transition flex items-center justify-center gap-2"
+              >
+                {demoMutation.isPending ? (
+                  <span className="w-4 h-4 border-2 border-amber-400/30 border-t-amber-500 rounded-full animate-spin" />
+                ) : (
+                  <FlaskConical className="w-4 h-4" />
+                )}
+                {demoMutation.isPending ? 'Loading demo data…' : 'Load Demo Data (skip setup)'}
+              </button>
+            )}
           </div>
         </div>
 

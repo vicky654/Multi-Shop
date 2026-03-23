@@ -1,6 +1,7 @@
 const productService = require('./product.service');
-const asyncHandler = require('../../utils/asyncHandler');
+const asyncHandler   = require('../../utils/asyncHandler');
 const { success, paginated } = require('../../utils/response');
+const notifService   = require('../notifications/notification.service');
 
 // ── Admin (protected) ─────────────────────────────────────────────────────────
 const getAll = asyncHandler(async (req, res) => {
@@ -15,7 +16,13 @@ const getOne = asyncHandler(async (req, res) => {
 });
 
 const create = asyncHandler(async (req, res) => {
-  const product = await productService.createProduct(req.user, req.body);
+  const { notifyCustomers, ...rest } = req.body;
+  const product = await productService.createProduct(req.user, rest);
+  if (notifyCustomers) {
+    notifService.notifyShopStaff(product, req.user).catch((err) =>
+      console.error('notifyShopStaff error:', err.message)
+    );
+  }
   success(res, { product }, 'Product created', 201);
 });
 

@@ -29,6 +29,7 @@ const productSchema = new mongoose.Schema(
     isFeatured:   { type: Boolean, default: false },
     isNewArrival: { type: Boolean, default: false },
     isTrending:   { type: Boolean, default: false },
+    isDemo:       { type: Boolean, default: false },
   },
   { timestamps: true }
 );

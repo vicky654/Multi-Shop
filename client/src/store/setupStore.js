@@ -18,6 +18,7 @@ const useSetupStore = create(
       hasCustomers:   false,
       hasSales:       false,
       modalDismissed: false, // user explicitly closed the welcome modal
+      isDemoMode:     false, // demo data has been seeded into the active shop
 
       /**
        * Mark a step as done.
@@ -60,6 +61,7 @@ const useSetupStore = create(
         hasCustomers:   false,
         hasSales:       false,
         modalDismissed: false,
+        isDemoMode:     false,
       }),
     }),
     {

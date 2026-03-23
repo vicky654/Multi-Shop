@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Package, ShoppingCart, Users,
   Receipt, BarChart2, Settings, X, Store, ExternalLink,
-  Zap, FlaskConical, UserCog, UserCheck, CheckCircle, Circle,
+  Zap, FlaskConical, UserCog, UserCheck, Shield, CheckCircle, Circle,
   ChevronRight, Sparkles, BookOpen,
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
@@ -24,6 +24,7 @@ const NAV = [
   { to: '/ai-insights', icon: Zap,             label: 'AI Insights', perm: 'ai'         },
   { to: '/roles',       icon: UserCog,         label: 'Roles',       perm: 'roles'      },
   { to: '/users',       icon: UserCheck,       label: 'Staff',       perm: 'staff'      },
+  { to: '/admin',       icon: Shield,          label: 'Admin',       perm: null, superAdminOnly: true },
   { to: '/settings',    icon: Settings,        label: 'Settings',    perm: 'settings'   },
   { to: '/system-test', icon: FlaskConical,    label: 'System Test', perm: 'settings'   },
 ];
@@ -115,7 +116,7 @@ function SetupProgress({ steps, completed, onOpenSetup, onClose }) {
 export default function Sidebar({ open, onClose, onOpenSetup }) {
   const [showGuide, setShowGuide] = useState(false);
 
-  const { can }        = usePermissions();
+  const { can, role }  = usePermissions();
   const { activeShop } = useShopStore();
   const user           = useAuthStore((s) => s.user);
   const getProgress    = useSetupStore((s) => s.getProgress);
@@ -171,7 +172,7 @@ export default function Sidebar({ open, onClose, onOpenSetup }) {
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto scrollbar-thin px-3 py-4 space-y-0.5">
-          {NAV.filter(({ perm }) => can(perm)).map(({ to, icon: Icon, label }) => {
+          {NAV.filter(({ perm, superAdminOnly }) => superAdminOnly ? role === 'super_admin' : can(perm)).map(({ to, icon: Icon, label }) => {
             const isNext = showSetup && to === nextRoute;
 
             return (

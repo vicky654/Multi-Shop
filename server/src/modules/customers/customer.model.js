@@ -22,6 +22,7 @@ const customerSchema = new mongoose.Schema(
     purchaseHistory: [purchaseHistorySchema],
     notes:   { type: String },
     isActive: { type: Boolean, default: true },
+    isDemo:   { type: Boolean, default: false },
   },
   { timestamps: true }
 );

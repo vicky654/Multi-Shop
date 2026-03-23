@@ -8,9 +8,6 @@ const api = axios.create({
   timeout: 15000,
 });
 
-if (import.meta.env.DEV) {
-  console.log('API baseURL:', api.defaults.baseURL);
-}
 
 
 

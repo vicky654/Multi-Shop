@@ -7,7 +7,7 @@ const notificationSchema = new mongoose.Schema(
     ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     type: {
       type: String,
-      enum: ['low_stock', 'new_order', 'sale', 'restock', 'ai_insight', 'info', 'warning'],
+      enum: ['low_stock', 'new_order', 'sale', 'restock', 'ai_insight', 'info', 'warning', 'new_product'],
       default: 'info',
     },
     title:   { type: String, required: true },

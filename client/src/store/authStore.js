@@ -11,7 +11,7 @@ const useAuthStore = create((set, get) => ({
     set({ loading: true });
     try {
       const res = await authApi.login(credentials);
-      console.log('Login API response:', res);
+  
       if (!res?.data?.token) throw new Error('No token received from server');
       localStorage.setItem('ms_token', res.data.token);
       set({ user: res.data.user, token: res.data.token, loading: false });

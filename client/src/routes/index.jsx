@@ -18,6 +18,7 @@ import Settings    from '../pages/Settings';
 import AiInsights  from '../pages/AiInsights';
 import Roles       from '../pages/Roles';
 import Users       from '../pages/Users';
+import AdminPanel  from '../pages/AdminPanel';
 import SystemTest  from '../pages/SystemTest';
 import LoadingSpinner from '../components/LoadingSpinner';
 
@@ -74,6 +75,7 @@ export default function AppRoutes() {
           <Route path="/ai-insights"  element={<AiInsights />} />
           <Route path="/roles"        element={<Roles />} />
           <Route path="/users"        element={<Users />} />
+          <Route path="/admin"        element={<AdminPanel />} />
           <Route path="/system-test"  element={<SystemTest />} />
         </Route>
       </Route>

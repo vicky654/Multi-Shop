@@ -21,6 +21,7 @@ export const EMPTY_FORM = {
   lowStockThreshold: 10, description: '', shopId: '',
   sizes: [], colors: [], images: [],
   isFeatured: false, isNewArrival: false, isTrending: false,
+  notifyCustomers: false,
 };
 
 // ── Shared input style ────────────────────────────────────────────────────────
@@ -434,6 +435,26 @@ export function ProductForm({ form, setForm, onSubmit, loading, shops, shopId, c
             </label>
           ))}
         </div>
+
+        {/* Notify staff when adding new product */}
+        {!form._id && (
+          <label className="flex items-start gap-2.5 cursor-pointer select-none group">
+            <input
+              type="checkbox"
+              checked={form.notifyCustomers}
+              onChange={(e) => upd('notifyCustomers', e.target.checked)}
+              className="mt-0.5 w-4 h-4 rounded accent-blue-600 border-gray-300 shrink-0"
+            />
+            <div>
+              <span className="text-sm font-medium text-blue-700 group-hover:text-blue-800">
+                📢 Notify staff about this product
+              </span>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Sends an in-app notification to all team members of this shop.
+              </p>
+            </div>
+          </label>
+        )}
       </FormSection>
 
       <button type="submit" disabled={loading}
