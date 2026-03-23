@@ -15,6 +15,7 @@ const notificationSchema = new mongoose.Schema(
     link:    { type: String },           // optional deep link
     read:    { type: Boolean, default: false },
     icon:    { type: String },           // emoji / icon name
+    isDemo:  { type: Boolean, default: false },
   },
   { timestamps: true }
 );

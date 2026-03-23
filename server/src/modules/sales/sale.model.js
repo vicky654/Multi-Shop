@@ -40,6 +40,7 @@ const saleSchema = new mongoose.Schema(
     customerName:  { type: String },
     customerPhone: { type: String },
     isOnlineOrder: { type: Boolean, default: false },
+    isDemo:        { type: Boolean, default: false },
   },
   { timestamps: true }
 );

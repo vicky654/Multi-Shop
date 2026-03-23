@@ -22,8 +22,8 @@ const TotalSummary = memo(function TotalSummary({ totals, taxRate, taxAmount, gr
         )}
       </div>
       <div className="flex justify-between items-baseline border-t border-white/20 pt-4">
-        <span className="text-base font-bold text-white/80 tracking-wide">Total</span>
-        <span className="text-4xl font-black tracking-tight tabular-nums">₹{grandTotal.toFixed(2)}</span>
+        <span className="text-base  text-white/80 tracking-wide">Total</span>
+        <span className="text-xl font-black tracking-tight tabular-nums">₹{grandTotal.toFixed(2)}</span>
       </div>
     </div>
   );

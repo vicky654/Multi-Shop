@@ -13,6 +13,7 @@ const expenseSchema = new mongoose.Schema(
     shopId:      { type: mongoose.Schema.Types.ObjectId, ref: 'Shop', required: true },
     ownerId:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     addedBy:     { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    isDemo:      { type: Boolean, default: false },
   },
   { timestamps: true }
 );

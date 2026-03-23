@@ -128,10 +128,13 @@ const segmentCustomers = async (req, res) => {
 
   const customers = await getTargetCustomers(shopId, targetType, ids);
 
-  // Return only what the client needs — name + phone (privacy-minimal)
-  const result = customers
-    .filter((c) => c.phone)
-    .map((c) => ({ _id: c._id, name: c.name, phone: c.phone }));
+  // Return all contacts including those missing phone (Verify step shows them for editing)
+  const result = customers.map((c) => ({
+    _id:   c._id,
+    name:  c.name,
+    phone: c.phone || '',
+    email: c.email || '',
+  }));
 
   res.json({ customers: result, total: result.length });
 };

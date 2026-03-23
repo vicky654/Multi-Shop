@@ -40,6 +40,7 @@ const userSchema = new mongoose.Schema(
     onboardingComplete: { type: Boolean, default: false },
     // FCM device tokens for push notifications (max 5 per user)
     deviceTokens: [{ type: String }],
+    isDemo:       { type: Boolean, default: false },
   },
   { timestamps: true }
 );

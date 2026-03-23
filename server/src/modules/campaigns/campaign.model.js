@@ -88,6 +88,7 @@ const campaignSchema = new mongoose.Schema(
       enum: ['pending', 'sent', 'partial', 'failed', 'scheduled', 'cancelled'],
       default: 'pending',
     },
+    isDemo: { type: Boolean, default: false },
 
     // Scheduling
     scheduledFor: { type: Date },

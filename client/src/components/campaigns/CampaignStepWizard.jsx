@@ -3,14 +3,16 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Users, MessageSquare, Eye, Send, ChevronRight, ChevronLeft,
   MessageCircle, Bell, Loader2, Calendar, Zap, Check,
-  ExternalLink, Phone, AlertTriangle, CheckCircle2,
+  ExternalLink, Phone, AlertTriangle, CheckCircle2, ShieldCheck,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { campaignsApi } from '../../api/campaigns.api';
 import { customersApi } from '../../api/customers.api';
 import useShopStore from '../../store/shopStore';
 import MessagePreview from './MessagePreview';
+import VerifyContactsStep from './VerifyContactsStep';
 import { sendWhatsAppCampaign } from '../../utils/whatsapp';
+import useCampaignStore, { useValidContacts, useInvalidContacts } from '../../store/campaignStore';
 
 // ── Static data ───────────────────────────────────────────────────────────────
 const CHANNELS = [
@@ -41,7 +43,8 @@ const STEPS = [
   { n: 1, icon: Users,        label: 'Audience' },
   { n: 2, icon: MessageSquare,label: 'Message'  },
   { n: 3, icon: Eye,          label: 'Preview'  },
-  { n: 4, icon: Send,         label: 'Send'     },
+  { n: 4, icon: ShieldCheck,  label: 'Verify'   },
+  { n: 5, icon: Send,         label: 'Send'     },
 ];
 
 // ── Step indicator ────────────────────────────────────────────────────────────
@@ -290,10 +293,10 @@ function Step3Preview({ form, shopName }) {
 }
 
 // ── Step 4: Send — WhatsApp panel ─────────────────────────────────────────────
-function Step4WhatsApp({ form, segmentCounts, waCustomers, waLoading }) {
+function Step4WhatsApp({ form, segmentCounts, validContacts, waLoading }) {
   const { targetType } = form;
   const segCount = segmentCounts?.[targetType] ?? '?';
-  const phoneCount = waCustomers.length;
+  const phoneCount = validContacts.length;
   const estimatedSeconds = ((phoneCount - 1) * 0.5).toFixed(1);
 
   return (
@@ -367,7 +370,7 @@ function Step4WhatsApp({ form, segmentCounts, waCustomers, waLoading }) {
       {phoneCount === 0 && !waLoading && (
         <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-3.5 py-3 text-sm text-red-700">
           <Phone className="w-4 h-4 shrink-0" />
-          No customers in this segment have phone numbers saved.
+          No customers in this segment have phone numbers saved ({phoneCount}).
         </div>
       )}
     </div>
@@ -535,6 +538,11 @@ export default function CampaignStepWizard({ initialValues = null, onSuccess }) 
   const [form,    setForm]    = useState(() => ({ ...DEFAULT_FORM, ...initialValues }));
   const [waLinks, setWaLinks] = useState(null);
 
+  // ── Campaign store (contact verification) ─────────────────────────────────
+  const validContacts   = useValidContacts();
+  const invalidContacts = useInvalidContacts();
+  const invalidCount    = invalidContacts.length;
+
   // Apply initial values when they change (from Smart Suggestions)
   useEffect(() => {
     if (initialValues) {
@@ -559,15 +567,25 @@ export default function CampaignStepWizard({ initialValues = null, onSuccess }) 
   });
   const customers = custData?.data || [];
 
-  // Fetch resolved customers for WhatsApp (client-side link gen) when on Step 4
+  // Fetch all segment contacts starting at step 4 (Verify step)
   const { data: segCustData, isLoading: segCustLoading } = useQuery({
-    queryKey: ['segment-customers-wa', shopId, form.targetType, JSON.stringify(form.targetIds)],
+    queryKey: ['segment-customers', shopId, form.targetType, JSON.stringify(form.targetIds)],
     queryFn:  () => campaignsApi.getSegmentCustomers(shopId, form.targetType, form.targetIds),
-    enabled:  !!shopId && form.channel === 'whatsapp' && step === 4,
+    enabled:  !!shopId && step >= 4,
     staleTime: 60 * 1000,
   });
-  // Handle both response shapes: { customers } or { data: { customers } }
-  const waCustomers = segCustData?.customers || segCustData?.data?.customers || [];
+
+  // Populate campaignStore whenever segment data arrives or channel changes
+  useEffect(() => {
+    if (!segCustData) return;
+    const raw = segCustData?.customers || segCustData?.data?.customers || [];
+    useCampaignStore.getState().setContacts(raw, form.channel);
+  }, [segCustData, form.channel]);
+
+  // Reset store when audience or channel changes (so stale validated contacts are cleared)
+  useEffect(() => {
+    useCampaignStore.getState().reset();
+  }, [form.targetType, form.channel]);
 
   // ── Mutations ─────────────────────────────────────────────────────────────
   const sendMut = useMutation({
@@ -597,13 +615,13 @@ export default function CampaignStepWizard({ initialValues = null, onSuccess }) 
   // ── WhatsApp send (client-side, no API wait) ──────────────────────────────
   const handleWhatsAppSend = useCallback(() => {
     if (!shopId) { toast.error('Select a shop first'); return; }
-    if (!waCustomers.length) {
+    if (!validContacts.length) {
       toast.error('No customers with phone numbers in this segment');
       return;
     }
 
     // Generate and open tabs
-    const links = sendWhatsAppCampaign(waCustomers, form.message, shopName);
+    const links = sendWhatsAppCampaign(validContacts, form.message, shopName);
 
     if (!links.length) {
       toast.error('No customers have valid phone numbers');
@@ -629,7 +647,7 @@ export default function CampaignStepWizard({ initialValues = null, onSuccess }) 
         qc.invalidateQueries(['campaign-stats', shopId]);
       })
       .catch((e) => console.warn('[WA Campaign] History save failed:', e.message));
-  }, [shopId, waCustomers, form, shopName, qc]);
+  }, [shopId, validContacts, form, shopName, qc]);
 
   // ── SMS / Push send (server-side) ─────────────────────────────────────────
   const handleServerSend = useCallback(() => {
@@ -660,7 +678,7 @@ export default function CampaignStepWizard({ initialValues = null, onSuccess }) 
   const canNext = useCallback(() => {
     if (step === 1) return form.targetType !== 'selected' || form.targetIds.length > 0;
     if (step === 2) return form.message.trim().length > 0;
-    return true;
+    return true; // steps 3 and 4: always allow advance
   }, [step, form]);
 
   // ── WhatsApp links result view ────────────────────────────────────────────
@@ -690,15 +708,18 @@ export default function CampaignStepWizard({ initialValues = null, onSuccess }) 
         )}
         {step === 2 && <Step2Message form={form} setForm={setForm} />}
         {step === 3 && <Step3Preview form={form} shopName={shopName} />}
-        {step === 4 && form.channel === 'whatsapp' && (
+        {step === 4 && (
+          <VerifyContactsStep channel={form.channel} isLoading={segCustLoading} />
+        )}
+        {step === 5 && form.channel === 'whatsapp' && (
           <Step4WhatsApp
             form={form}
             segmentCounts={segmentCounts}
-            waCustomers={waCustomers}
+            validContacts={validContacts}
             waLoading={segCustLoading}
           />
         )}
-        {step === 4 && form.channel !== 'whatsapp' && (
+        {step === 5 && form.channel !== 'whatsapp' && (
           <Step4Send form={form} setForm={setForm} segmentCounts={segmentCounts} />
         )}
       </div>
@@ -715,57 +736,79 @@ export default function CampaignStepWizard({ initialValues = null, onSuccess }) 
         )}
         <div className="flex-1" />
 
-        {step < 4 ? (
-          <button
-            onClick={() => setStep((s) => s + 1)}
-            disabled={!canNext()}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold transition disabled:opacity-40 shadow-md shadow-blue-200"
-          >
-            Next <ChevronRight className="w-4 h-4" />
-          </button>
+        {step < 5 ? (
+          <div className="flex flex-col items-end gap-1.5">
+            <button
+              onClick={() => setStep((s) => s + 1)}
+              disabled={!canNext()}
+              className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold transition disabled:opacity-40 shadow-md shadow-blue-200"
+            >
+              Next <ChevronRight className="w-4 h-4" />
+            </button>
+            {/* Warn at verify step if issues exist but still let user advance */}
+            {step === 4 && invalidCount > 0 && (
+              <p className="text-[11px] text-amber-600 font-semibold">
+                {invalidCount} issue{invalidCount !== 1 ? 's' : ''} — fix before sending
+              </p>
+            )}
+          </div>
 
         ) : form.channel === 'whatsapp' ? (
           /* ── WhatsApp: Open tabs button ── */
-          <button
-            onClick={handleSend}
-            disabled={segCustLoading || waCustomers.length === 0}
-            className="flex items-center gap-2 px-6 py-3 rounded-xl
-              bg-gradient-to-r from-green-500 to-emerald-600
-              hover:from-green-600 hover:to-emerald-700
-              text-white text-sm font-bold transition
-              disabled:opacity-50 disabled:cursor-not-allowed
-              shadow-lg shadow-green-300/40"
-          >
-            {segCustLoading ? (
-              <><Loader2 className="w-4 h-4 animate-spin" /> Loading customers…</>
-            ) : (
-              <>
-                <MessageCircle className="w-4 h-4" />
-                Open WhatsApp Messages
-                {waCustomers.length > 0 && (
-                  <span className="bg-white/20 rounded-full px-1.5 py-0.5 text-xs font-black ml-0.5">
-                    {waCustomers.length}
-                  </span>
-                )}
-              </>
+          <div className="flex flex-col items-end gap-1.5">
+            <button
+              onClick={handleSend}
+              disabled={segCustLoading || validContacts.length === 0 || invalidCount > 0}
+              className="flex items-center gap-2 px-6 py-3 rounded-xl
+                bg-gradient-to-r from-green-500 to-emerald-600
+                hover:from-green-600 hover:to-emerald-700
+                text-white text-sm font-bold transition
+                disabled:opacity-50 disabled:cursor-not-allowed
+                shadow-lg shadow-green-300/40"
+            >
+              {segCustLoading ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /> Loading customers…</>
+              ) : (
+                <>
+                  <MessageCircle className="w-4 h-4" />
+                  Open WhatsApp Messages
+                  {validContacts.length > 0 && (
+                    <span className="bg-white/20 rounded-full px-1.5 py-0.5 text-xs font-black ml-0.5">
+                      {validContacts.length}
+                    </span>
+                  )}
+                </>
+              )}
+            </button>
+            {invalidCount > 0 && (
+              <p className="text-[11px] text-red-600 font-semibold">
+                {invalidCount} contact{invalidCount !== 1 ? 's' : ''} need attention — go back to Verify
+              </p>
             )}
-          </button>
+          </div>
 
         ) : (
           /* ── SMS / Push: Server send button ── */
-          <button
-            onClick={handleSend}
-            disabled={sendMut.isPending}
-            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-bold transition disabled:opacity-60 shadow-lg shadow-blue-200"
-          >
-            {sendMut.isPending ? (
-              <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</>
-            ) : form.sendNow ? (
-              <><Zap className="w-4 h-4" /> Send Now</>
-            ) : (
-              <><Calendar className="w-4 h-4" /> Schedule</>
+          <div className="flex flex-col items-end gap-1.5">
+            <button
+              onClick={handleSend}
+              disabled={sendMut.isPending || invalidCount > 0}
+              className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-bold transition disabled:opacity-60 shadow-lg shadow-blue-200"
+            >
+              {sendMut.isPending ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</>
+              ) : form.sendNow ? (
+                <><Zap className="w-4 h-4" /> Send Now</>
+              ) : (
+                <><Calendar className="w-4 h-4" /> Schedule</>
+              )}
+            </button>
+            {invalidCount > 0 && (
+              <p className="text-[11px] text-red-600 font-semibold">
+                {invalidCount} contact{invalidCount !== 1 ? 's' : ''} need attention — go back to Verify
+              </p>
             )}
-          </button>
+          </div>
         )}
       </div>
     </div>
