@@ -31,6 +31,7 @@ const ALLOWED_ORIGINS = [
   'http://localhost:3000',
   'http://localhost:5001',
   'https://multishop-backend-9jbg.onrender.com',
+  'https://multi-shop-tawny.vercel.app',
   // Production frontends — add your Vercel / Netlify URL in CLIENT_URL env var
   // e.g. CLIENT_URL=https://multi-shop-tawny.vercel.app
   ...(process.env.CLIENT_URL ? process.env.CLIENT_URL.split(',').map((u) => u.trim()) : []),
