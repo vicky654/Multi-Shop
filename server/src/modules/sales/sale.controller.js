@@ -2,9 +2,11 @@ const saleService   = require('./sale.service');
 const asyncHandler  = require('../../utils/asyncHandler');
 const { success, paginated } = require('../../utils/response');
 const notifService  = require('../../services/notification.service');
+const { logAction, LOG_ACTIONS } = require('../../utils/logger');
 
 // ── Admin (protected) ─────────────────────────────────────────────────────────
 const create = asyncHandler(async (req, res) => {
+  logAction(req, LOG_ACTIONS.ORDER_CREATE, 'sales', `Created sale with ${req.body.items?.length || 0} items`, { total: req.body.totalAmount, shopId: req.query.shopId });
   const sale = await saleService.createSale(req.user, req.body);
   success(res, { sale }, 'Sale created', 201);
 
@@ -21,6 +23,7 @@ const create = asyncHandler(async (req, res) => {
 });
 
 const getAll = asyncHandler(async (req, res) => {
+  logAction(req, LOG_ACTIONS.ORDER_GET_ALL, 'sales', 'Fetched sales list', { shopId: req.query.shopId, page: req.query.page });
   const { sales, total, page, limit } = await saleService.getSales(req.user, req.query);
   paginated(res, sales, total, page, limit, 'Sales fetched');
 });
@@ -31,6 +34,7 @@ const getOne = asyncHandler(async (req, res) => {
 });
 
 const refund = asyncHandler(async (req, res) => {
+  logAction(req, LOG_ACTIONS.ORDER_UPDATE, 'sales', `Refunded sale ID: ${req.params.id}`);
   const sale = await saleService.refundSale(req.params.id, req.user);
   success(res, { sale }, 'Sale refunded');
 });

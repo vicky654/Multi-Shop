@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Package, ShoppingCart, Users,
   Receipt, BarChart2, Settings, X, Store, ExternalLink,
   Zap, FlaskConical, UserCog, UserCheck, Shield, CheckCircle, Circle,
-  ChevronRight, Sparkles, BookOpen, Megaphone,
+  ChevronRight, Sparkles, BookOpen, Megaphone, Activity,
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import useShopStore  from '../store/shopStore';
@@ -25,7 +25,8 @@ const NAV = [
   { to: '/campaigns',   icon: Megaphone,       label: 'Campaigns',   perm: 'customers'  },
   { to: '/roles',       icon: UserCog,         label: 'Roles',       perm: 'roles'      },
   { to: '/users',       icon: UserCheck,       label: 'Staff',       perm: 'staff'      },
-  { to: '/admin',       icon: Shield,          label: 'Admin',       perm: null, superAdminOnly: true },
+{ to: '/admin',       icon: Shield,          label: 'Admin',       perm: null, superAdminOnly: true },
+  { to: '/logs',        icon: Activity,         label: 'Logs',        perm: null, superAdminOnly: false },  // owner + super_admin
   { to: '/settings',    icon: Settings,        label: 'Settings',    perm: 'settings'   },
   { to: '/system-test', icon: FlaskConical,    label: 'System Test', perm: 'settings'   },
 ];

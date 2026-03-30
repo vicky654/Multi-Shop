@@ -21,6 +21,7 @@ import Roles       from '../pages/Roles';
 import Users       from '../pages/Users';
 import AdminPanel  from '../pages/AdminPanel';
 import SystemTest  from '../pages/SystemTest';
+import Logs         from '../pages/Logs';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 // Customer shop pages
@@ -85,7 +86,8 @@ export default function AppRoutes() {
           <Route path="/roles"        element={<Roles />} />
           <Route path="/users"        element={<Users />} />
           <Route path="/admin"        element={<AdminPanel />} />
-          <Route path="/system-test"  element={<SystemTest />} />
+<Route path="/system-test"  element={<SystemTest />} />
+          <Route path="/logs"        element={<Logs />} />
         </Route>
       </Route>
 

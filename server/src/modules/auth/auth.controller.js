@@ -1,19 +1,23 @@
 const authService = require('./auth.service');
 const asyncHandler = require('../../utils/asyncHandler');
 const { success } = require('../../utils/response');
+const { logAction, LOG_ACTIONS } = require('../../utils/logger');
 
 const register = asyncHandler(async (req, res) => {
-  const { name, email, password, phone } = req.body;
-  const result = await authService.register({ name, email, password, role: 'owner', phone });
+  const { name: regName, email: regEmail, password, phone } = req.body;
+  const result = await authService.register({ name: regName, email: regEmail, password, role: 'owner', phone });
+  logAction(req, LOG_ACTIONS.REGISTER_SUCCESS, 'auth', `New owner registered: ${regEmail}`);
   success(res, result, 'Registered successfully', 201);
 });
 
 const login = asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
+  const { email: loginEmail, password } = req.body;
   if (process.env.NODE_ENV !== 'production') {
-    console.log('📩 Login request body:', { email, password: '***' });
+    console.log('📩 Login request body:', { email: loginEmail, password: '***' });
   }
-  const result = await authService.login({ email, password });
+  const result = await authService.login({ email: loginEmail, password });
+  logAction(req, LOG_ACTIONS.LOGIN_SUCCESS, 'auth', `User logged in: ${result.user.email}`);
+
   if (process.env.NODE_ENV !== 'production') {
     console.log('📤 Sending response:', { success: true, user: result.user?.email, token: result.token?.slice(0, 20) + '…' });
   }

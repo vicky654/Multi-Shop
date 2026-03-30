@@ -22,6 +22,7 @@ const campaignRoutes      = require('./modules/campaigns/campaign.routes');
 const automationRoutes    = require('./modules/campaigns/automation.routes');
 const scheduler           = require('./modules/campaigns/scheduler');
 const notifyRoutes        = require('./modules/notify/notify.routes');
+const logsRoutes          = require('./modules/logs/logs.routes');
 
 const app = express();
 
@@ -50,6 +51,8 @@ app.use(cors({
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(sanitize);
+const logContext = require('./middlewares/log.middleware');
+app.use(logContext);  // Capture user/shop context for all requests
 if (process.env.NODE_ENV !== 'production') app.use(morgan('dev'));
 
 // ── Root + Health ──────────────────────────────────────────────────────────────
@@ -74,6 +77,7 @@ app.use('/api/push',          pushRoutes);
 app.use('/api/campaigns',     campaignRoutes);
 app.use('/api/automations',   automationRoutes);
 app.use('/api/notify',        notifyRoutes);
+app.use('/api/logs',          logsRoutes);
 
 scheduler.start();
 
