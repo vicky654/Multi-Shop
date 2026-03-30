@@ -162,4 +162,39 @@ const getAiSummary = async (user, shopId) => {
   };
 };
 
-module.exports = { getFastMovingProducts, getRestockSuggestions, getDiscountRecommendations, getSalesTrendPrediction, getAiSummary };
+// ── Frequently Bought Together (smart billing suggestions) ────────────────────
+const getSuggestions = async (user, shopId, productIds) => {
+  if (!productIds || !productIds.length) return [];
+
+  const ids   = Array.isArray(productIds) ? productIds : [productIds];
+  const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000); // 90-day window
+
+  const salesFilter = {
+    status:    'completed',
+    isPrivate: { $ne: true },
+    createdAt: { $gte: since },
+    'items.product': { $in: ids },
+    ...shopFilter(user, shopId),
+  };
+
+  // Fetch up to 500 recent matching orders
+  const sales = await Sale.find(salesFilter).select('items').limit(500).lean();
+
+  // Count how many times each co-purchased product appears
+  const freq = {};
+  for (const sale of sales) {
+    for (const item of sale.items) {
+      const pid = item.product?.toString();
+      if (!pid || ids.includes(pid)) continue;
+      if (!freq[pid]) freq[pid] = { count: 0, name: item.name, price: item.price };
+      freq[pid].count++;
+    }
+  }
+
+  return Object.entries(freq)
+    .sort(([, a], [, b]) => b.count - a.count)
+    .slice(0, 5)
+    .map(([productId, d]) => ({ productId, name: d.name, price: d.price, frequency: d.count }));
+};
+
+module.exports = { getFastMovingProducts, getRestockSuggestions, getDiscountRecommendations, getSalesTrendPrediction, getAiSummary, getSuggestions };

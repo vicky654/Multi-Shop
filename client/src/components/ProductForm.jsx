@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
-import { Tag, Layers, Package, Palette, Image, FileText, X, Upload, ChevronDown } from 'lucide-react';
+import { Tag, Layers, Package, Palette, Image, FileText, X, Upload, ChevronDown, Camera } from 'lucide-react';
 import { FormSection } from './ui/FormSection';
+import { productsApi } from '../api/products.api';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const DEFAULT_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
@@ -270,6 +271,29 @@ function ImageUploader({ images, onChange }) {
 export function ProductForm({ form, setForm, onSubmit, loading, shops, shopId, categories }) {
   const upd = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
+  const photoRef      = useRef();
+  const [analyzing, setAnalyzing] = useState(false);
+
+  const handlePhotoAnalyze = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    setAnalyzing(true);
+    try {
+      const fd = new FormData();
+      fd.append('image', file);
+      const res = await productsApi.analyzeImage(fd);
+      const { name, category, description } = res?.data?.detected || {};
+      if (name)        upd('name', name);
+      if (category)    upd('category', category);
+      if (description) upd('description', description);
+    } catch {
+      // silently ignore — user can fill fields manually
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
   const price      = parseFloat(form.price)     || 0;
   const costPrice  = parseFloat(form.costPrice) || 0;
   const discount   = parseFloat(form.discount)  || 0;
@@ -283,9 +307,23 @@ export function ProductForm({ form, setForm, onSubmit, loading, shops, shopId, c
       {/* ── Basic Info ── */}
       <FormSection title="Basic Info" icon={Package} color="gray">
         <div>
-          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-            Product Name <span className="text-red-500">*</span>
-          </label>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+              Product Name <span className="text-red-500">*</span>
+            </label>
+            <button
+              type="button"
+              onClick={() => photoRef.current.click()}
+              disabled={analyzing}
+              className="flex items-center gap-1 px-2 py-0.5 bg-violet-50 hover:bg-violet-100 border border-violet-200 text-violet-700 rounded-lg text-[11px] font-semibold transition disabled:opacity-50"
+            >
+              {analyzing
+                ? <span className="animate-spin w-3 h-3 border border-violet-400 border-t-violet-700 rounded-full" />
+                : <Camera className="w-3 h-3" />}
+              {analyzing ? 'Analyzing…' : 'Add by Photo'}
+            </button>
+            <input ref={photoRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoAnalyze} />
+          </div>
           <input required value={form.name} onChange={(e) => upd('name', e.target.value)}
             placeholder="e.g. Men's Cotton T-Shirt"
             className={inp} />

@@ -11,6 +11,9 @@ import Header     from '../components/Header';
 import BottomNav  from '../components/BottomNav';
 import Onboarding    from '../components/Onboarding';
 import OfflineBanner from '../components/OfflineBanner';
+import TourGuide     from '../components/TourGuide';
+import HelpPanel     from '../components/HelpPanel';
+import { useTour }   from '../hooks/useTour';
 import useShopStore  from '../store/shopStore';
 import useAuthStore  from '../store/authStore';
 import useSetupStore from '../store/setupStore';
@@ -24,6 +27,7 @@ export default function DashboardLayout() {
   const [sidebarOpen,    setSidebarOpen]    = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showDemoModal,  setShowDemoModal]  = useState(false);
+  const tour = useTour();
 
   // Initialise Capacitor push notifications (no-op on web)
   usePushNotifications();
@@ -96,6 +100,15 @@ export default function DashboardLayout() {
     const isNewUser = !activeShop && !isComplete && !modalDismissed;
     if (isNewUser) setShowOnboarding(true);
   }, [user, activeShop, modalDismissed]);
+
+  // ── 4. Auto-start tour for first-time users (once shop is set up) ─────────
+  useEffect(() => {
+    if (!user || !activeShop) return;
+    if (tour.hasSeenTour()) return;
+    const timer = setTimeout(() => tour.startTour(), 1800);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, activeShop]);
 
   return (
     <div className="h-full flex overflow-hidden bg-gray-50">
@@ -183,6 +196,19 @@ export default function DashboardLayout() {
           onCleared={() => setShowDemoModal(false)}
         />
       )}
+
+      {/* Interactive tour guide — auto-shown on first visit */}
+      <TourGuide
+        isOpen={tour.isOpen}
+        step={tour.step}
+        beginSteps={tour.beginSteps}
+        nextStep={tour.nextStep}
+        prevStep={tour.prevStep}
+        skipTour={tour.skipTour}
+      />
+
+      {/* Floating help panel — always available */}
+      <HelpPanel />
     </div>
   );
 }

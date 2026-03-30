@@ -167,8 +167,141 @@ const getPublicCategories = async (shopId) => {
   return { categories, subCategories: subCategories.filter(Boolean) };
 };
 
+// ── Bulk CSV Import ───────────────────────────────────────────────────────────
+const importProducts = async (user, records) => {
+  let successCount = 0;
+  let failedCount  = 0;
+  const errors     = [];
+
+  for (let i = 0; i < records.length; i++) {
+    const row = records[i];
+    const rowNum = i + 2; // 1-based + header row
+
+    // Validate required fields
+    if (!row.name || !row.name.trim()) {
+      errors.push({ row: rowNum, error: 'Missing required field: name' });
+      failedCount++;
+      continue;
+    }
+    if (!row.price || isNaN(Number(row.price))) {
+      errors.push({ row: rowNum, field: row.name, error: 'Missing or invalid field: price' });
+      failedCount++;
+      continue;
+    }
+    if (!row.costPrice || isNaN(Number(row.costPrice))) {
+      errors.push({ row: rowNum, field: row.name, error: 'Missing or invalid field: costPrice' });
+      failedCount++;
+      continue;
+    }
+    if (!row.category || !row.category.trim()) {
+      errors.push({ row: rowNum, field: row.name, error: 'Missing required field: category' });
+      failedCount++;
+      continue;
+    }
+
+    // Resolve shopId: use row value if super_admin, else fall back to user's first shop
+    const shopId = row.shopId || (user.shops && user.shops[0]?.toString());
+    if (!shopId) {
+      errors.push({ row: rowNum, field: row.name, error: 'No shopId provided or assigned' });
+      failedCount++;
+      continue;
+    }
+
+    if (user.role !== 'super_admin' && !user.shops.some((s) => s.toString() === shopId.toString())) {
+      errors.push({ row: rowNum, field: row.name, error: 'No access to shopId: ' + shopId });
+      failedCount++;
+      continue;
+    }
+
+    // Prevent duplicate barcode within the same shop
+    if (row.barcode && row.barcode.trim()) {
+      const existing = await Product.findOne({ barcode: row.barcode.trim(), shopId, isActive: true });
+      if (existing) {
+        errors.push({ row: rowNum, field: row.name, error: `Duplicate barcode: ${row.barcode}` });
+        failedCount++;
+        continue;
+      }
+    }
+
+    try {
+      await Product.create({
+        name:              row.name.trim(),
+        category:          row.category.trim(),
+        subCategory:       row.subCategory?.trim() || '',
+        price:             Number(row.price),
+        costPrice:         Number(row.costPrice),
+        discount:          row.discount ? Math.min(100, Math.max(0, Number(row.discount))) : 0,
+        stock:             row.stock ? Number(row.stock) : 0,
+        barcode:           row.barcode?.trim() || undefined,
+        sku:               row.sku?.trim()     || undefined,
+        unit:              row.unit?.trim()    || 'pcs',
+        description:       row.description?.trim() || '',
+        lowStockThreshold: row.lowStockThreshold ? Number(row.lowStockThreshold) : 10,
+        shopId,
+        ownerId:           user._id,
+      });
+      successCount++;
+    } catch (err) {
+      errors.push({ row: rowNum, field: row.name, error: err.message });
+      failedCount++;
+    }
+  }
+
+  return { successCount, failedCount, errors };
+};
+
+// ── Export All Products to CSV ────────────────────────────────────────────────
+const exportAllProducts = async (user, shopId) => {
+  const filter = { isActive: true };
+  if (shopId) {
+    filter.shopId = shopId;
+  } else if (user.role !== 'super_admin') {
+    filter.shopId = { $in: user.shops };
+  }
+
+  const products = await Product.find(filter).sort({ createdAt: -1 }).lean();
+
+  const header = ['name','category','subCategory','price','costPrice','discount','stock','barcode','sku','unit','description','lowStockThreshold'];
+  const rows   = [header.join(',')];
+
+  products.forEach((p) => {
+    const row = [
+      `"${(p.name         || '').replace(/"/g, '""')}"`,
+      `"${(p.category     || '').replace(/"/g, '""')}"`,
+      `"${(p.subCategory  || '').replace(/"/g, '""')}"`,
+      p.price        ?? '',
+      p.costPrice    ?? '',
+      p.discount     ?? 0,
+      p.stock        ?? 0,
+      `"${(p.barcode      || '').replace(/"/g, '""')}"`,
+      `"${(p.sku          || '').replace(/"/g, '""')}"`,
+      `"${(p.unit         || 'pcs').replace(/"/g, '""')}"`,
+      `"${(p.description  || '').replace(/"/g, '""').replace(/\n/g, ' ')}"`,
+      p.lowStockThreshold ?? 10,
+    ];
+    rows.push(row.join(','));
+  });
+
+  return { csv: rows.join('\n'), count: products.length };
+};
+
+// ── Bulk Delete ───────────────────────────────────────────────────────────────
+const bulkDeleteProducts = async (user, ids) => {
+  if (!Array.isArray(ids) || ids.length === 0)
+    throw Object.assign(new Error('No product IDs provided'), { status: 400 });
+
+  const filter = { _id: { $in: ids } };
+  if (user.role !== 'super_admin') {
+    filter.shopId = { $in: user.shops };
+  }
+
+  const result = await Product.updateMany(filter, { $set: { isActive: false } });
+  return { deletedCount: result.modifiedCount };
+};
+
 module.exports = {
   getProducts, getProductById, createProduct, updateProduct,
   deleteProduct, getCategories, getLowStockProducts,
   getPublicProducts, getPublicProductById, getPublicCategories,
+  importProducts, exportAllProducts, bulkDeleteProducts,
 };

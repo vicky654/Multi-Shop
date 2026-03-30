@@ -46,7 +46,8 @@ const enrichItems = async (items) => {
 
 // ── Admin (staff) sale ────────────────────────────────────────────────────────
 const createSale = async (user, data) => {
-  const { shopId, items, customerId, paymentMethod, notes, taxRate = 0 } = data;
+  const { shopId, items, customerId, paymentMethod, notes, taxRate = 0,
+          isPrivate = false, dueAmount = 0 } = data;
 
   if (!items || !items.length) throw Object.assign(new Error('No items in sale'), { status: 400 });
 
@@ -76,9 +77,11 @@ const createSale = async (user, data) => {
     customerId:    customerId || null,
     shopId,
     ownerId,
-    staffId:  user._id,
+    staffId:    user._id,
     notes,
-    status:   'completed',
+    status:     'completed',
+    isPrivate:  !!isPrivate,
+    dueAmount:  paymentMethod === 'credit' ? Math.max(0, Number(dueAmount) || 0) : 0,
   });
 
   if (customerId) {

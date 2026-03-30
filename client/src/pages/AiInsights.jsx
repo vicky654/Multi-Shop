@@ -47,8 +47,9 @@ function CardShell({ icon: Icon, color, title, count, children, badge }) {
 
 // ── Sub-sections ──────────────────────────────────────────────────────────────
 function FastMovingSection({ data }) {
-  if (!data?.length) return <p className="text-sm text-gray-400 py-2">No fast-moving products found.</p>;
-  return (
+   if (!Array.isArray(data) || data.length === 0)
+    return <p className="text-sm text-gray-400 py-2">No fast-moving products found.</p>;
+return (
     <div className="space-y-2">
       {data.map((p) => (
         <div key={p.productId} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
@@ -100,7 +101,7 @@ function DiscountSection({ data }) {
           </div>
           <div className="text-right">
             <p className="text-sm font-bold text-purple-600">{p.suggestedDiscount}% off</p>
-            <p className="text-xs text-gray-500">margin: {p.profitMargin?.toFixed(1)}%</p>
+            <p className="text-xs text-gray-500">margin: {p.profitMargin ? p.profitMargin.toFixed(1) : "0.0"}%</p>
           </div>
         </div>
       ))}
@@ -116,8 +117,10 @@ function TrendSection({ data }) {
   const TrendIcon = direction === 'up' ? ArrowUpRight : direction === 'down' ? ArrowDownRight : Minus;
   const trendColor = direction === 'up' ? 'text-green-500' : direction === 'down' ? 'text-red-500' : 'text-gray-400';
 
-  const max = Math.max(...dailyData.map((d) => d.revenue || 0), 1);
-
+const safeData = Array.isArray(dailyData) ? dailyData : [];
+const max = safeData.length
+  ? Math.max(...safeData.map((d) => d?.revenue || 0), 1)
+  : 1;
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-4">
@@ -135,7 +138,7 @@ function TrendSection({ data }) {
       {dailyData.length > 0 && (
         <div className="flex items-end gap-1 h-16">
           {dailyData.slice(-14).map((d, i) => (
-            <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
+            <div key={d.date || i} className="flex-1 flex flex-col items-center gap-0.5">
               <div
                 className="w-full bg-blue-400 rounded-sm"
                 style={{ height: `${((d.revenue || 0) / max) * 48}px`, minHeight: '2px' }}
@@ -155,9 +158,11 @@ function AlertBanner({ alerts = [] }) {
   return (
     <div className="space-y-2">
       {alerts.map((a, i) => (
-        <div key={i} className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+        <div key={a.date || i} className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl">
           <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-          <p className="text-xs text-amber-800">{a}</p>
+     <p className="text-xs text-amber-800">
+  {typeof a === "string" ? a : a?.message || "Unknown alert"}
+</p>
         </div>
       ))}
     </div>
@@ -176,7 +181,7 @@ export default function AiInsights() {
     staleTime: 5 * 60_000,
   });
 
-  const summary = data?.data;
+const summary = data?.data || {};
 
   if (!shopId) {
     return (
@@ -208,7 +213,7 @@ export default function AiInsights() {
       {isLoading && (
         <div className="grid gap-4">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-24 bg-white rounded-2xl border border-gray-100 animate-pulse" />
+            <div key={ i} className="h-24 bg-white rounded-2xl border border-gray-100 animate-pulse" />
           ))}
         </div>
       )}

@@ -62,4 +62,84 @@ const getPublicCategories = asyncHandler(async (req, res) => {
   success(res, data, 'Categories fetched');
 });
 
-module.exports = { getAll, getOne, create, update, remove, categories, lowStock, getPublic, getPublicOne, getPublicCategories };
+// ── AI: Analyze Product Photo (OpenAI Vision) ─────────────────────────────────
+const analyzeImage = asyncHandler(async (req, res) => {
+  if (!req.file) throw Object.assign(new Error('No image uploaded'), { status: 400 });
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw Object.assign(new Error('OPENAI_API_KEY not configured'), { status: 503 });
+
+  const OpenAI    = require('openai');
+  const client    = new OpenAI({ apiKey });
+  const b64       = req.file.buffer.toString('base64');
+  const mimeType  = req.file.mimetype || 'image/jpeg';
+
+  const completion = await client.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [{
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: 'Analyze this retail product image. Return ONLY valid JSON with these keys: {"name":"short product name","category":"product category","description":"one sentence description"}. Keep it concise for a POS system.',
+        },
+        {
+          type: 'image_url',
+          image_url: { url: `data:${mimeType};base64,${b64}`, detail: 'low' },
+        },
+      ],
+    }],
+    max_tokens: 200,
+  });
+
+  let detected = {};
+  try {
+    const raw = completion.choices[0]?.message?.content || '{}';
+    // Strip markdown code fences if present
+    const cleaned = raw.replace(/```json\n?/g, '').replace(/```/g, '').trim();
+    detected = JSON.parse(cleaned);
+  } catch {
+    detected = { name: '', category: '', description: '' };
+  }
+
+  success(res, { detected }, 'Image analyzed');
+});
+
+// ── Bulk CSV Import ───────────────────────────────────────────────────────────
+const importCSV = asyncHandler(async (req, res) => {
+  if (!req.file) throw Object.assign(new Error('No CSV file uploaded'), { status: 400 });
+
+  const csv    = require('csv-parser');
+  const stream = require('stream');
+  const records = [];
+
+  await new Promise((resolve, reject) => {
+    const readable = stream.Readable.from(req.file.buffer);
+    readable
+      .pipe(csv())
+      .on('data', (row) => records.push(row))
+      .on('end', resolve)
+      .on('error', reject);
+  });
+
+  const result = await productService.importProducts(req.user, records);
+  success(res, result, `Import complete: ${result.successCount} added, ${result.failedCount} failed`, 200);
+});
+
+// ── Export All Products to CSV ────────────────────────────────────────────────
+const exportCSV = asyncHandler(async (req, res) => {
+  const shopId = req.query.shopId || null;
+  const { csv, count } = await productService.exportAllProducts(req.user, shopId);
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="products-${Date.now()}.csv"`);
+  res.send(csv);
+});
+
+// ── Bulk Delete ───────────────────────────────────────────────────────────────
+const bulkDelete = asyncHandler(async (req, res) => {
+  const { ids } = req.body;
+  const result  = await productService.bulkDeleteProducts(req.user, ids);
+  success(res, result, `${result.deletedCount} products deleted`);
+});
+
+module.exports = { getAll, getOne, create, update, remove, categories, lowStock, getPublic, getPublicOne, getPublicCategories, importCSV, exportCSV, bulkDelete, analyzeImage };

@@ -27,4 +27,12 @@ const trend = asyncHandler(async (req, res) => {
   success(res, data, 'Sales trend prediction');
 });
 
-module.exports = { summary, fastMoving, restock, discounts, trend };
+// GET /ai/suggestions?shopId=&productIds=id1,id2
+const suggestions = asyncHandler(async (req, res) => {
+  const { shopId, productIds } = req.query;
+  const ids  = productIds ? productIds.split(',').filter(Boolean) : [];
+  const data = await aiService.getSuggestions(req.user, shopId, ids);
+  success(res, { suggestions: data }, 'Billing suggestions');
+});
+
+module.exports = { summary, fastMoving, restock, discounts, trend, suggestions };

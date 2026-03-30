@@ -41,6 +41,10 @@ const saleSchema = new mongoose.Schema(
     customerPhone: { type: String },
     isOnlineOrder: { type: Boolean, default: false },
     isDemo:        { type: Boolean, default: false },
+    // ── Private Mode — hide from analytics & exports ───────────────────────
+    isPrivate:     { type: Boolean, default: false },
+    // ── Credit sales — amount still owed by customer ───────────────────────
+    dueAmount:     { type: Number, default: 0 },
   },
   { timestamps: true }
 );

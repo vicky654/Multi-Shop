@@ -16,12 +16,12 @@ import AppFlowGuide from './AppFlowGuide';
 // ── Navigation items ───────────────────────────────────────────────────────────
 const NAV = [
   { to: '/dashboard',   icon: LayoutDashboard, label: 'Dashboard',   perm: 'dashboard'  },
-  { to: '/inventory',   icon: Package,         label: 'Inventory',   perm: 'inventory'  },
-  { to: '/billing',     icon: ShoppingCart,    label: 'Billing',     perm: 'billing'    },
+  { to: '/inventory',   icon: Package,         label: 'Inventory',   perm: 'inventory',  tour: 'nav-inventory' },
+  { to: '/billing',     icon: ShoppingCart,    label: 'Billing',     perm: 'billing',    tour: 'nav-billing'   },
   { to: '/customers',   icon: Users,           label: 'Customers',   perm: 'customers'  },
   { to: '/expenses',    icon: Receipt,         label: 'Expenses',    perm: 'expenses'   },
-  { to: '/reports',     icon: BarChart2,       label: 'Reports',     perm: 'reports'    },
-  { to: '/ai-insights', icon: Zap,             label: 'AI Insights', perm: 'ai'         },
+  { to: '/reports',     icon: BarChart2,       label: 'Reports',     perm: 'reports',    tour: 'nav-reports'   },
+  { to: '/ai-insights', icon: Zap,             label: 'AI Insights', perm: 'ai',         tour: 'nav-ai'        },
   { to: '/campaigns',   icon: Megaphone,       label: 'Campaigns',   perm: 'customers'  },
   { to: '/roles',       icon: UserCog,         label: 'Roles',       perm: 'roles'      },
   { to: '/users',       icon: UserCheck,       label: 'Staff',       perm: 'staff'      },
@@ -173,7 +173,7 @@ export default function Sidebar({ open, onClose, onOpenSetup }) {
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto scrollbar-thin px-3 py-4 space-y-0.5">
-          {NAV.filter(({ perm, superAdminOnly }) => superAdminOnly ? role === 'super_admin' : can(perm)).map(({ to, icon: Icon, label }) => {
+          {NAV.filter(({ perm, superAdminOnly }) => superAdminOnly ? role === 'super_admin' : can(perm)).map(({ to, icon: Icon, label, tour }) => {
             const isNext = showSetup && to === nextRoute;
 
             return (
@@ -182,6 +182,7 @@ export default function Sidebar({ open, onClose, onOpenSetup }) {
                 to={to}
                 onClick={onClose}
                 title={isNext ? `Next step → ${label}` : undefined}
+                {...(tour ? { 'data-tour': tour } : {})}
                 className={({ isActive }) => [
                   'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all',
                   isActive

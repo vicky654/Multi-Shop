@@ -107,10 +107,10 @@ export default function Dashboard() {
       <div>
         <p className="text-xs text-gray-400 uppercase tracking-wide font-medium mb-3">Today</p>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard icon={IndianRupee} label="Revenue"    value={fmt(d.todayRevenue)} color="blue"   sub={`${d.todaySalesCount || 0} sales`} />
-          <StatCard icon={TrendingUp}  label="Profit"     value={fmt(d.todayProfit)}  color="green"  />
-          <StatCard icon={ShoppingCart}label="Orders"     value={d.todaySalesCount || 0} color="purple" />
-          <StatCard icon={Package}     label="Low Stock"  value={d.lowStockCount || 0}   color="orange" sub="items need restock" />
+          <StatCard icon={IndianRupee} label="Revenue"   rawValue={d.todayRevenue}     color="blue"   sub={`${d.todaySalesCount || 0} sales`} />
+          <StatCard icon={TrendingUp}  label="Profit"    rawValue={d.todayProfit}      color="green"  />
+          <StatCard icon={ShoppingCart}label="Orders"    value={d.todaySalesCount || 0} color="purple" />
+          <StatCard icon={Package}     label="Low Stock" value={d.lowStockCount || 0}   color="orange" sub="items need restock" />
         </div>
       </div>
 
@@ -118,10 +118,10 @@ export default function Dashboard() {
       <div>
         <p className="text-xs text-gray-400 uppercase tracking-wide font-medium mb-3">All Time</p>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard icon={ShoppingCart} label="Total Sales"   value={d.totalSalesCount || 0}  color="blue"   sub="transactions" />
-          <StatCard icon={IndianRupee}  label="Total Revenue" value={fmt(d.totalRevenue)}      color="green"  />
-          <StatCard icon={TrendingUp}   label="Gross Profit"  value={fmt(d.totalProfit)}       color="purple" />
-          <StatCard icon={Receipt}      label="Net Profit"    value={fmt(netProfit)}            color={netProfit >= 0 ? 'green' : 'red'} sub="after expenses" />
+          <StatCard icon={ShoppingCart} label="Total Sales"   value={d.totalSalesCount || 0}   color="blue"   sub="transactions" />
+          <StatCard icon={IndianRupee}  label="Total Revenue" rawValue={d.totalRevenue}         color="green"  />
+          <StatCard icon={TrendingUp}   label="Gross Profit"  rawValue={d.totalProfit}          color="purple" />
+          <StatCard icon={Receipt}      label="Net Profit"    rawValue={netProfit}               color={netProfit >= 0 ? 'green' : 'red'} sub="after expenses" />
         </div>
       </div>
 
@@ -241,8 +241,8 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard icon={Users}   label="Customers"    value={d.totalCustomers || 0} color="blue"   sub="total registered" />
         <StatCard icon={Package} label="Products"     value={d.totalProducts  || 0} color="purple" />
-        <StatCard icon={Receipt} label="Expenses"     value={fmt(d.totalExpenses)}  color="red"    sub="all time" />
-        <StatCard icon={IndianRupee} label="Avg Sale" value={fmt(d.totalSalesCount ? d.totalRevenue / d.totalSalesCount : 0)} color="orange" sub="per transaction" />
+        <StatCard icon={Receipt} label="Expenses"     rawValue={d.totalExpenses}                                                color="red"    sub="all time" />
+        <StatCard icon={IndianRupee} label="Avg Sale" rawValue={d.totalSalesCount ? d.totalRevenue / d.totalSalesCount : 0} color="orange" sub="per transaction" />
       </div>
     </div>
   );

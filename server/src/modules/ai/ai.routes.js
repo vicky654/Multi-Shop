@@ -5,10 +5,11 @@ const { allowRoles } = require('../../middlewares/role.middleware');
 
 router.use(protect);
 
-router.get('/summary',    ctrl.summary);
-router.get('/fast-moving',ctrl.fastMoving);
-router.get('/restock',    ctrl.restock);
-router.get('/discounts',  ctrl.discounts);
-router.get('/trend',      ctrl.trend);
+router.get('/summary',     ctrl.summary);
+router.get('/fast-moving', ctrl.fastMoving);
+router.get('/restock',     ctrl.restock);
+router.get('/discounts',   ctrl.discounts);
+router.get('/trend',       ctrl.trend);
+router.get('/suggestions', ctrl.suggestions);   // ← billing suggestions
 
 module.exports = router;
