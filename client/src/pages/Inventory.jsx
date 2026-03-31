@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Search, Edit2, Trash2, AlertTriangle,
   Download, RefreshCw, Upload, Copy, Barcode,
-  CheckSquare, Square, X as XIcon, Package,
+  CheckSquare, Square, X as XIcon, Package, ScanLine,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -15,6 +15,7 @@ import Modal from '../components/Modal';
 import { ProductForm, EMPTY_FORM } from '../components/ProductForm';
 import ImageCarousel from '../components/ImageCarousel';
 import CSVImportModal from '../components/CSVImportModal';
+import ProductImportReviewModal from '../components/ProductImportReviewModal';
 import MiniTip from '../components/MiniTip';
 
 // ── Mobile product card ───────────────────────────────────────────────────────
@@ -229,7 +230,8 @@ export default function Inventory() {
   };
 
   // ── CSV Import modal ──────────────────────────────────────────────────────────
-  const [showImport, setShowImport] = useState(false);
+  const [showImport,    setShowImport]    = useState(false);
+  const [showBillScan,  setShowBillScan]  = useState(false);
 
   // ── Queries ───────────────────────────────────────────────────────────────────
   const { data, isLoading } = useQuery({
@@ -408,7 +410,7 @@ export default function Inventory() {
       {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Inventory</h1>
+          <h1 className="text-2xl font-semibold text-gray-900">Inventory</h1>
           <p className="text-sm text-gray-500">{products.length} products</p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -420,12 +422,15 @@ export default function Inventory() {
             className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-600 hover:bg-gray-50 rounded-lg text-sm font-medium transition">
             <Upload className="w-4 h-4" /> Import CSV
           </button>
+          <button onClick={() => setShowBillScan(true)}
+            className="flex items-center gap-1.5 px-3 py-2 border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg text-sm font-medium transition">
+            <ScanLine className="w-4 h-4" /> Scan Bill
+          </button>
           <button onClick={() => qc.invalidateQueries(['products'])}
             className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-600 hover:bg-gray-50 rounded-lg text-sm font-medium transition">
             <RefreshCw className="w-4 h-4" />
           </button>
-          <button onClick={() => openCreate()}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition text-sm">
+          <button onClick={() => openCreate()} className="btn-primary text-sm">
             <Plus className="w-4 h-4" /> Add Product
           </button>
         </div>
@@ -462,10 +467,10 @@ export default function Inventory() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input value={search} onChange={(e) => handleSearch(e.target.value)}
             placeholder="Search by name, barcode, or category…"
-            className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            className="ui-input pl-9" />
         </div>
         <select value={category} onChange={(e) => setCategory(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 sm:w-44 bg-white">
+          className="ui-select sm:w-44">
           <option value="">All Categories</option>
           {categories.map((c) => <option key={c}>{c}</option>)}
         </select>
@@ -546,6 +551,13 @@ export default function Inventory() {
           qc.invalidateQueries(['products']);
           qc.invalidateQueries(['categories']);
         }}
+      />
+
+      {/* ── Bill Scan / Product Import Review Modal ── */}
+      <ProductImportReviewModal
+        open={showBillScan}
+        onClose={() => setShowBillScan(false)}
+        shopId={shopId}
       />
     </div>
   );

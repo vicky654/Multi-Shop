@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { FlaskConical, X, Wand2 } from 'lucide-react';
+import AlertPanel from '../components/AlertPanel';
+import { useAlerts } from '../hooks/useAlerts';
 import toast from 'react-hot-toast';
 import DemoGeneratorModal from '../components/DemoGeneratorModal';
 import { usePushNotifications } from '../hooks/usePushNotifications';
@@ -27,7 +29,19 @@ export default function DashboardLayout() {
   const [sidebarOpen,    setSidebarOpen]    = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showDemoModal,  setShowDemoModal]  = useState(false);
-  const tour = useTour();
+  const [alertsOpen,     setAlertsOpen]     = useState(false);
+  const tour     = useTour();
+  const navigate = useNavigate();
+
+  const { alerts } = useAlerts();
+
+  // Auto-show alerts once after dashboard load (1.5 s delay)
+  useEffect(() => {
+    if (!alerts.length) return;
+    const t = setTimeout(() => setAlertsOpen(true), 1500);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [alerts.length > 0]);
 
   // Initialise Capacitor push notifications (no-op on web)
   usePushNotifications();
@@ -119,7 +133,11 @@ export default function DashboardLayout() {
       />
 
       <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
-        <Header onMenuClick={() => setSidebarOpen((v) => !v)} />
+        <Header
+          onMenuClick={() => setSidebarOpen((v) => !v)}
+          alertCount={alerts.length}
+          onAlertsClick={() => setAlertsOpen((v) => !v)}
+        />
 
         <OfflineBanner />
 
@@ -196,6 +214,13 @@ export default function DashboardLayout() {
           onCleared={() => setShowDemoModal(false)}
         />
       )}
+
+      <AlertPanel
+        isOpen={alertsOpen}
+        onClose={() => setAlertsOpen(false)}
+        alerts={alerts}
+        onAlertClick={(alert) => { navigate(alert.route); setAlertsOpen(false); }}
+      />
 
       {/* Interactive tour guide — auto-shown on first visit */}
       <TourGuide

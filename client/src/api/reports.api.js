@@ -7,4 +7,6 @@ export const reportsApi = {
   bestSellers:      (params) => api.get('/reports/best-sellers',      { params }),
   profitLoss:       (params) => api.get('/reports/profit-loss',       { params }),
   paymentBreakdown: (params) => api.get('/reports/payment-breakdown', { params }),
+  dailyClosing:     (params) => api.get('/reports/daily-closing',     { params }),
+  simpleReport:     (params) => api.get('/reports/simple',            { params }),
 };

@@ -37,6 +37,21 @@ const logSchema = new mongoose.Schema({
     enum: ['success', 'error'],
     default: 'success'
   },
+  // Impersonation audit — who really performed the action
+  actorId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+    index: true,
+    sparse: true,
+  },
+  // Which staff was being impersonated (null when acting as self)
+  actingAs: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+    sparse: true,
+  },
   ipAddress: {
     type: String,
     maxlength: 45  // IPv6 support

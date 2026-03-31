@@ -1,4 +1,4 @@
-import { Menu, LogOut, ChevronDown } from 'lucide-react';
+import { Menu, LogOut, ChevronDown, Bell } from 'lucide-react';
 import { useState } from 'react';
 import useAuthStore from '../store/authStore';
 import { useNavigate } from 'react-router-dom';
@@ -12,7 +12,7 @@ const ROLE_LABELS = {
   inventory_staff: 'Inventory Staff',
 };
 
-export default function Header({ onMenuClick }) {
+export default function Header({ onMenuClick, alertCount = 0, onAlertsClick }) {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
   const [dropOpen, setDropOpen] = useState(false);
@@ -38,6 +38,18 @@ export default function Header({ onMenuClick }) {
         </div>
 
         <div className="flex items-center gap-3">
+          {alertCount > 0 && (
+            <button
+              onClick={onAlertsClick}
+              className="relative p-2 rounded-lg hover:bg-amber-50 text-amber-600 transition"
+              title={`${alertCount} smart alert${alertCount !== 1 ? 's' : ''}`}
+            >
+              <Bell className="w-5 h-5" />
+              <span className="absolute top-1 right-1 w-4 h-4 bg-amber-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none">
+                {alertCount > 9 ? '9+' : alertCount}
+              </span>
+            </button>
+          )}
           <NotificationBell />
 
           <div className="relative">

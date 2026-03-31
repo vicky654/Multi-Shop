@@ -20,6 +20,16 @@ const shopSchema = new mongoose.Schema(
     taxRate: { type: Number, default: 0 }, // GST %
     isActive: { type: Boolean, default: true },
 
+    // ── Sale Banner settings ─────────────────────────────────────────────────
+    saleBanner: {
+      enabled:  { type: Boolean, default: false },
+      title:    { type: String,  default: '' },
+      subtitle: { type: String,  default: '' },
+      discount: { type: String,  default: '' },   // e.g. "20%" or "Flat ₹100 OFF"
+      theme:    { type: String,  default: 'blue' }, // blue | orange | green | purple | red
+      endDate:  { type: Date },
+    },
+
     // ── Notification settings ────────────────────────────────────────────────
     notifSettings: {
       ownerWhatsapp:       { type: String },          // WhatsApp number for daily summary

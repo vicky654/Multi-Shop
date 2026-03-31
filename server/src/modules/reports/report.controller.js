@@ -49,4 +49,11 @@ const dailyClosing = asyncHandler(async (req, res) => {
   success(res, data, 'Daily closing summary');
 });
 
-module.exports = { dashboard, salesTrend, bestSellers, profitLoss, paymentBreakdown, summary, dailyClosing };
+// GET /reports/simple?period=today|week|month&shopId=...
+const simpleReport = asyncHandler(async (req, res) => {
+  const { shopId, period = 'today' } = req.query;
+  const data = await reportService.getSimpleReport(req.user, shopId, period);
+  success(res, data, `Simple report — ${period}`);
+});
+
+module.exports = { dashboard, salesTrend, bestSellers, profitLoss, paymentBreakdown, summary, dailyClosing, simpleReport };

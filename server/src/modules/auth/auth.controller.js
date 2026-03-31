@@ -58,4 +58,21 @@ const completeOnboarding = asyncHandler(async (req, res) => {
   success(res, {}, 'Onboarding completed');
 });
 
-module.exports = { register, login, getMe, completeOnboarding, createStaff, getStaff, updateStaff, deleteStaff };
+const impersonate = asyncHandler(async (req, res) => {
+  const { staffId } = req.params;
+
+  // Block if already impersonating (prevent nested impersonation)
+  if (req.isImpersonating) {
+    return res.status(403).json({ success: false, message: 'Cannot impersonate while already impersonating' });
+  }
+
+  const result = await authService.impersonateStaff(req.user._id, req.user.role, staffId);
+
+  logAction(req, LOG_ACTIONS.IMPERSONATE_START, 'auth',
+    `${req.user.name} (${req.user.role}) started impersonating ${result.staff.name}`,
+    { staffId, staffName: result.staff.name, staffRole: result.staff.role });
+
+  success(res, result, `Impersonating ${result.staff.name}`);
+});
+
+module.exports = { register, login, getMe, completeOnboarding, createStaff, getStaff, updateStaff, deleteStaff, impersonate };

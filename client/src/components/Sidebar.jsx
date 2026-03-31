@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Package, ShoppingCart, Users,
   Receipt, BarChart2, Settings, X, Store, ExternalLink,
   Zap, FlaskConical, UserCog, UserCheck, Shield, CheckCircle, Circle,
-  ChevronRight, Sparkles, BookOpen, Megaphone, Activity,
+  ChevronRight, ChevronLeft, Sparkles, BookOpen, Megaphone, Activity, PanelLeftClose, PanelLeftOpen,
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import useShopStore  from '../store/shopStore';
@@ -117,6 +117,16 @@ function SetupProgress({ steps, completed, onOpenSetup, onClose }) {
 // ── Sidebar ────────────────────────────────────────────────────────────────────
 export default function Sidebar({ open, onClose, onOpenSetup }) {
   const [showGuide, setShowGuide] = useState(false);
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem('sidebar_collapsed') === 'true'
+  );
+
+  const toggleCollapse = () => {
+    setCollapsed((v) => {
+      localStorage.setItem('sidebar_collapsed', String(!v));
+      return !v;
+    });
+  };
 
   const { can, role }  = usePermissions();
   const { activeShop } = useShopStore();
@@ -138,32 +148,50 @@ export default function Sidebar({ open, onClose, onOpenSetup }) {
   return (
     <>
       <aside className={[
-        'fixed inset-y-0 left-0 z-30 w-64 bg-gray-900 text-white flex flex-col',
-        'transform transition-transform duration-300',
+        'fixed inset-y-0 left-0 z-30 bg-gray-900 text-white flex flex-col',
+        'transform transition-all duration-300',
         open ? 'translate-x-0' : '-translate-x-full',
         'lg:relative lg:translate-x-0 lg:h-full lg:shrink-0',
+        collapsed ? 'w-16' : 'w-64',
       ].join(' ')}>
 
         {/* Logo */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-700/60">
-          <div className="flex items-center gap-3">
+        <div className={`flex items-center border-b border-gray-700/60 ${collapsed ? 'justify-center px-0 py-4' : 'justify-between px-5 py-4'}`}>
+          {!collapsed && (
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-inner">
+                <Store className="w-4 h-4" />
+              </div>
+              <span className="font-bold text-lg tracking-tight">MultiShop</span>
+            </div>
+          )}
+          {collapsed && (
             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-inner">
               <Store className="w-4 h-4" />
             </div>
-            <span className="font-bold text-lg tracking-tight">MultiShop</span>
-          </div>
+          )}
+          {/* Mobile close / Desktop collapse toggle */}
           <button onClick={onClose} className="lg:hidden p-1 rounded text-gray-400 hover:text-white">
             <X className="w-5 h-5" />
+          </button>
+          <button
+            onClick={toggleCollapse}
+            className="hidden lg:flex p-1 rounded text-gray-400 hover:text-white transition"
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {collapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
           </button>
         </div>
 
         {/* Shop switcher */}
-        <div className="px-3 py-3 border-b border-gray-700/60">
-          <ShopSwitcher />
-        </div>
+        {!collapsed && (
+          <div className="px-3 py-3 border-b border-gray-700/60">
+            <ShopSwitcher />
+          </div>
+        )}
 
         {/* Onboarding stepper — shown until all 4 steps complete */}
-        {showSetup && (
+        {showSetup && !collapsed && (
           <SetupProgress
             steps={steps}
             completed={completed}
@@ -173,7 +201,7 @@ export default function Sidebar({ open, onClose, onOpenSetup }) {
         )}
 
         {/* Nav */}
-        <nav className="flex-1 overflow-y-auto scrollbar-thin px-3 py-4 space-y-0.5">
+        <nav className="flex-1 overflow-y-auto scrollbar-thin px-2 py-4 space-y-0.5">
           {NAV.filter(({ perm, superAdminOnly }) => superAdminOnly ? role === 'super_admin' : can(perm)).map(({ to, icon: Icon, label, tour }) => {
             const isNext = showSetup && to === nextRoute;
 
@@ -182,18 +210,19 @@ export default function Sidebar({ open, onClose, onOpenSetup }) {
                 key={to}
                 to={to}
                 onClick={onClose}
-                title={isNext ? `Next step → ${label}` : undefined}
+                title={collapsed ? label : (isNext ? `Next step → ${label}` : undefined)}
                 {...(tour ? { 'data-tour': tour } : {})}
                 className={({ isActive }) => [
-                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all',
+                  'flex items-center rounded-lg text-sm font-medium transition-all',
+                  collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5',
                   isActive
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
                     : 'text-gray-400 hover:text-white hover:bg-gray-800',
                 ].join(' ')}
               >
                 <Icon className="w-4 h-4 shrink-0" />
-                <span className="flex-1">{label}</span>
-                {isNext && (
+                {!collapsed && <span className="flex-1">{label}</span>}
+                {!collapsed && isNext && (
                   <span className="text-[9px] font-bold bg-blue-500 text-white px-1.5 py-0.5 rounded-full animate-pulse">
                     NEXT
                   </span>
@@ -204,38 +233,45 @@ export default function Sidebar({ open, onClose, onOpenSetup }) {
         </nav>
 
         {/* App Flow Guide toggle */}
-        <div className="px-3 pb-2">
-          <button
-            onClick={() => setShowGuide((v) => !v)}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-gray-800 transition-all"
-          >
-            <BookOpen className="w-3.5 h-3.5 shrink-0" />
-            <span className="flex-1 text-left">How it works</span>
-            <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-200 ${showGuide ? 'rotate-90' : ''}`} />
-          </button>
-        </div>
+        {!collapsed && (
+          <div className="px-3 pb-2">
+            <button
+              onClick={() => setShowGuide((v) => !v)}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-gray-800 transition-all"
+            >
+              <BookOpen className="w-3.5 h-3.5 shrink-0" />
+              <span className="flex-1 text-left">How it works</span>
+              <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-200 ${showGuide ? 'rotate-90' : ''}`} />
+            </button>
+          </div>
+        )}
 
         {/* Customer shop preview link */}
         {shopId && (
-          <div className="px-3 pb-3">
+          <div className="px-2 pb-3">
             <a
               href={`/shop?shopId=${shopId}`}
               target="_blank"
               rel="noopener noreferrer"
               onClick={onClose}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-emerald-400 hover:text-emerald-300 hover:bg-emerald-900/30 transition-all"
+              title={collapsed ? 'Customer Shop' : undefined}
+              className={[
+                'flex items-center rounded-lg text-sm font-medium text-emerald-400 hover:text-emerald-300 hover:bg-emerald-900/30 transition-all',
+                collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5',
+              ].join(' ')}
             >
               <Store className="w-4 h-4 shrink-0" />
-              <span>Customer Shop</span>
-              <ExternalLink className="w-3 h-3 ml-auto opacity-60" />
+              {!collapsed && <><span>Customer Shop</span><ExternalLink className="w-3 h-3 ml-auto opacity-60" /></>}
             </a>
           </div>
         )}
 
         {/* Version */}
-        <div className="px-5 py-3 border-t border-gray-700/60">
-          <p className="text-xs text-gray-500">MultiShop v3.0</p>
-        </div>
+        {!collapsed && (
+          <div className="px-5 py-3 border-t border-gray-700/60">
+            <p className="text-xs text-gray-500">MultiShop v3.0</p>
+          </div>
+        )}
       </aside>
 
       {/* App Flow Guide — slides in from left, above the sidebar overlay */}

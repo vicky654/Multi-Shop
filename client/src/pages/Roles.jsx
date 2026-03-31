@@ -200,7 +200,7 @@ function RoleForm({ initial = EMPTY_ROLE, onSave, onCancel, saving }) {
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
             placeholder="e.g. inventory_staff"
-            className="w-full h-10 px-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="ui-input h-10"
           />
         </div>
         <div>
@@ -211,7 +211,7 @@ function RoleForm({ initial = EMPTY_ROLE, onSave, onCancel, saving }) {
             value={form.description}
             onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
             placeholder="Short description"
-            className="w-full h-10 px-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="ui-input h-10"
           />
         </div>
       </div>
@@ -261,7 +261,7 @@ function RoleForm({ initial = EMPTY_ROLE, onSave, onCancel, saving }) {
           Cancel
         </button>
         <button type="submit" disabled={saving}
-          className="flex-1 h-10 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2">
+          className="btn-primary flex-1 h-10 disabled:opacity-60 rounded-xl text-sm justify-center">
           {saving && <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
           <Save className="w-4 h-4" />
           {saving ? 'Saving…' : 'Save Role'}
@@ -422,7 +422,7 @@ export default function Roles() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+          <h1 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
             <UserCog className="w-6 h-6 text-blue-600" />
             Roles & Permissions
           </h1>
@@ -433,7 +433,7 @@ export default function Roles() {
         {canEdit && mode === null && (
           <button
             onClick={() => setMode('create')}
-            className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition text-sm shadow-sm"
+            className="btn-primary text-sm"
           >
             <Plus className="w-4 h-4" /> Create Role
           </button>
@@ -535,7 +535,7 @@ export default function Roles() {
           {canEdit && (
             <button
               onClick={() => setMode('create')}
-              className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium transition"
+              className="btn-primary mt-4 text-sm"
             >
               <Plus className="w-4 h-4" /> Create your first role
             </button>

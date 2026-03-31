@@ -44,7 +44,7 @@ export default function StatCard({ icon: Icon, label, value, rawValue, sub, colo
         {/* Value + full-value tooltip on hover */}
         <div className="relative inline-block max-w-full">
           <p
-            className={`font-bold leading-tight truncate ${fontSize} ${c.val} ${hasRaw ? 'cursor-help select-none' : ''}`}
+            className={`font-semibold leading-tight truncate ${fontSize} ${c.val} ${hasRaw ? 'cursor-help select-none' : ''}`}
             onMouseEnter={() => hasRaw && setTip(true)}
             onMouseLeave={() => setTip(false)}
           >

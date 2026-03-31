@@ -75,21 +75,21 @@ function QuickStats({ stats, loading }) {
           <FileText className="w-4 h-4 text-gray-400" />
           <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total Today</span>
         </div>
-        <p className="text-2xl font-bold text-gray-900">{stats.todayTotal || 0}</p>
+        <p className="text-2xl font-semibold text-gray-900">{stats.todayTotal || 0}</p>
       </div>
       <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
         <div className="flex items-center gap-2 mb-1">
           <AlertCircle className="w-4 h-4 text-red-400" />
           <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Errors Today</span>
         </div>
-        <p className="text-2xl font-bold text-red-600">{stats.todayErrors || 0}</p>
+        <p className="text-2xl font-semibold text-red-600">{stats.todayErrors || 0}</p>
       </div>
       <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
         <div className="flex items-center gap-2 mb-1">
           <Clock className="w-4 h-4 text-blue-400" />
           <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Last Hour</span>
         </div>
-        <p className="text-2xl font-bold text-blue-600">{stats.lastHour || 0}</p>
+        <p className="text-2xl font-semibold text-blue-600">{stats.lastHour || 0}</p>
       </div>
     </div>
   );
@@ -145,7 +145,7 @@ const stats = data?.pages?.[0]?.data?.data?.stats || {};
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+          <h1 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
             <Activity className="w-7 h-7 text-blue-600" />
             Activity Logs
           </h1>

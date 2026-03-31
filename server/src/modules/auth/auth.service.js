@@ -112,4 +112,42 @@ const deleteStaff = async (staffId, ownerId) => {
   return staff;
 };
 
-module.exports = { register, login, getMe, completeOnboarding, createStaff, getStaff, updateStaff, deleteStaff };
+// ── Staff Impersonation ───────────────────────────────────────────────────────
+const impersonateStaff = async (ownerId, ownerRole, staffId) => {
+  // Security: only owner or super_admin can impersonate
+  if (!['owner', 'super_admin'].includes(ownerRole)) {
+    throw Object.assign(new Error('Not authorized to impersonate staff'), { status: 403 });
+  }
+
+  // Staff must belong to this owner (super_admin can impersonate anyone)
+  const query = ownerRole === 'super_admin'
+    ? { _id: staffId }
+    : { _id: staffId, ownerId };
+
+  const staff = await User.findOne(query).select('-password');
+  if (!staff) {
+    throw Object.assign(new Error('Staff member not found'), { status: 404 });
+  }
+  if (!staff.isActive) {
+    throw Object.assign(new Error('Cannot impersonate an inactive account'), { status: 400 });
+  }
+
+  // Only impersonate actual staff roles — prevent owner impersonating another owner
+  const IMPERSONABLE = ['manager', 'billing_staff', 'inventory_staff'];
+  if (!IMPERSONABLE.includes(staff.role)) {
+    throw Object.assign(new Error('Can only impersonate staff members (manager / billing / inventory)'), { status: 400 });
+  }
+
+  // Issue an impersonation token — standard JWT expiry applies
+  const token = signToken({
+    id:               staff._id,
+    role:             staff.role,
+    isImpersonating:  true,
+    originalOwnerId:  ownerId,
+  });
+
+  const staffWithPerms = await withPermissions(staff);
+  return { token, staff: staffWithPerms };
+};
+
+module.exports = { register, login, getMe, completeOnboarding, createStaff, getStaff, updateStaff, deleteStaff, impersonateStaff };

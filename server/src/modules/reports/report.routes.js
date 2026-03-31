@@ -13,5 +13,6 @@ router.get('/best-sellers',      ctrl.bestSellers);
 router.get('/profit-loss',       ctrl.profitLoss);
 router.get('/payment-breakdown', ctrl.paymentBreakdown);
 router.get('/daily-closing',     ctrl.dailyClosing);     // ← end-of-day report
+router.get('/simple',            ctrl.simpleReport);     // ← today/week/month quick view
 
 module.exports = router;

@@ -73,7 +73,7 @@ export default function NotificationBell() {
       >
         <Bell className="w-5 h-5" />
         {unreadCount > 0 && (
-          <span className="absolute top-1 right-1 min-w-[16px] h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-0.5 leading-none">
+          <span className="absolute top-1 right-1 min-w-[16px] h-4 bg-red-500 text-white text-[10px] font-semibold rounded-full flex items-center justify-center px-0.5 leading-none">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
@@ -88,7 +88,7 @@ export default function NotificationBell() {
               <Bell className="w-4 h-4 text-gray-700" />
               <span className="font-semibold text-gray-800 text-sm">Notifications</span>
               {unreadCount > 0 && (
-                <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-0.5 rounded-full">
+                <span className="bg-red-100 text-red-600 text-xs font-semibold px-2 py-0.5 rounded-full">
                   {unreadCount} new
                 </span>
               )}
@@ -170,7 +170,7 @@ export default function NotificationBell() {
                       )}
                       <button
                         onClick={(e) => { e.stopPropagation(); remove(n._id); }}
-                        className="p-1 rounded hover:bg-gray-200 transition text-gray-400 opacity-0 group-hover:opacity-100"
+                        className="p-1 rounded-lg hover:bg-gray-200 transition text-gray-400 opacity-0 group-hover:opacity-100"
                         title="Dismiss"
                       >
                         <X className="w-3 h-3" />

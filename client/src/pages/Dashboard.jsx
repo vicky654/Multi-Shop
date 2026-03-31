@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   TrendingUp, Package, Users, Receipt, AlertTriangle,
   ShoppingCart, IndianRupee, ArrowUpRight, Clock,
+  BarChart3, Calendar, CalendarDays,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import {
@@ -14,6 +16,10 @@ import { productsApi } from '../api/products.api';
 import StatCard        from '../components/StatCard';
 import useShopStore    from '../store/shopStore';
 import LoadingSpinner  from '../components/LoadingSpinner';
+import SaleBanner      from '../components/SaleBanner';
+import DailySummaryCard from '../components/DailySummaryCard';
+import QuickActions    from '../components/QuickActions';
+import InsightWidgets  from '../components/InsightWidgets';
 
 const fmt    = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 const PIE_COLORS = { cash: '#3b82f6', card: '#8b5cf6', upi: '#22c55e', credit: '#f59e0b' };
@@ -34,6 +40,90 @@ const ChartTooltip = ({ active, payload, label }) => {
   );
 };
 
+// ── Simple Period Tabs ────────────────────────────────────────────────────────
+const PERIODS = [
+  { key: 'today', label: 'Today',   icon: Clock       },
+  { key: 'week',  label: 'Week',    icon: Calendar    },
+  { key: 'month', label: 'Month',   icon: CalendarDays },
+];
+
+function SimpleReportTabs({ shopId }) {
+  const [period, setPeriod] = useState('today');
+
+  const { data, isLoading } = useQuery({
+    queryKey:  ['simple-report', shopId, period],
+    queryFn:   () => reportsApi.simpleReport({ shopId, period }),
+    staleTime: 3 * 60_000,
+  });
+  const d = data?.data || {};
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 p-5">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+          <BarChart3 className="w-4 h-4 text-blue-600" /> Quick Summary
+        </h3>
+        <div className="flex bg-gray-100 rounded-xl p-0.5 gap-0.5">
+          {PERIODS.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setPeriod(key)}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                period === key
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-8">
+          <LoadingSpinner size="sm" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="bg-blue-50 rounded-xl p-3 text-center">
+            <p className="text-xs text-blue-600 font-medium mb-1">Revenue</p>
+            <p className="text-base font-bold text-blue-700">{fmt(d.sales?.revenue)}</p>
+          </div>
+          <div className="bg-green-50 rounded-xl p-3 text-center">
+            <p className="text-xs text-green-600 font-medium mb-1">Profit</p>
+            <p className="text-base font-bold text-green-700">{fmt(d.sales?.profit)}</p>
+          </div>
+          <div className="bg-purple-50 rounded-xl p-3 text-center">
+            <p className="text-xs text-purple-600 font-medium mb-1">Orders</p>
+            <p className="text-base font-bold text-purple-700">{d.sales?.orders || 0}</p>
+          </div>
+          <div className={`rounded-xl p-3 text-center ${d.netProfit >= 0 ? 'bg-teal-50' : 'bg-red-50'}`}>
+            <p className={`text-xs font-medium mb-1 ${d.netProfit >= 0 ? 'text-teal-600' : 'text-red-600'}`}>Net Profit</p>
+            <p className={`text-base font-bold ${d.netProfit >= 0 ? 'text-teal-700' : 'text-red-700'}`}>
+              {fmt(d.netProfit)}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Top product for period */}
+      {!isLoading && d.topProduct && (
+        <div className="mt-3 flex items-center justify-between bg-yellow-50 rounded-xl px-3 py-2 border border-yellow-100">
+          <p className="text-xs text-yellow-700 font-medium">Top product this {period}</p>
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-bold text-gray-900">{d.topProduct.name}</p>
+            <span className="text-xs bg-yellow-200 text-yellow-800 font-bold px-1.5 py-0.5 rounded-full">
+              {d.topProduct.qty} sold
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main Dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { activeShop } = useShopStore();
   const shopId = activeShop?._id;
@@ -89,10 +179,18 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Daily Summary Popup (shown once per day) */}
+      <DailySummaryCard />
+
+      {/* ── Sale Banner (shown if enabled in shop settings) ── */}
+      {activeShop?.saleBanner?.enabled && (
+        <SaleBanner banner={activeShop.saleBanner} />
+      )}
+
       {/* ── Header ── */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+          <h1 className="text-2xl font-semibold text-gray-900">Dashboard</h1>
           <p className="text-sm text-gray-500 mt-0.5">
             {activeShop ? activeShop.name : 'All Shops'} — {format(new Date(), 'dd MMM yyyy')}
           </p>
@@ -103,20 +201,12 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* ── Quick Period Summary (Today / Week / Month) ── */}
+      <SimpleReportTabs shopId={shopId} />
+
       {/* ── Today's KPIs ── */}
       <div>
-        <p className="text-xs text-gray-400 uppercase tracking-wide font-medium mb-3">Today</p>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard icon={IndianRupee} label="Revenue"   rawValue={d.todayRevenue}     color="blue"   sub={`${d.todaySalesCount || 0} sales`} />
-          <StatCard icon={TrendingUp}  label="Profit"    rawValue={d.todayProfit}      color="green"  />
-          <StatCard icon={ShoppingCart}label="Orders"    value={d.todaySalesCount || 0} color="purple" />
-          <StatCard icon={Package}     label="Low Stock" value={d.lowStockCount || 0}   color="orange" sub="items need restock" />
-        </div>
-      </div>
-
-      {/* ── All-time KPIs ── */}
-      <div>
-        <p className="text-xs text-gray-400 uppercase tracking-wide font-medium mb-3">All Time</p>
+        <p className="text-xs text-gray-400 uppercase tracking-wide font-medium mb-3">All-Time Overview</p>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard icon={ShoppingCart} label="Total Sales"   value={d.totalSalesCount || 0}   color="blue"   sub="transactions" />
           <StatCard icon={IndianRupee}  label="Total Revenue" rawValue={d.totalRevenue}         color="green"  />
@@ -154,6 +244,11 @@ export default function Dashboard() {
           <div className="flex items-center gap-2 mb-4">
             <AlertTriangle className="w-4 h-4 text-orange-500" />
             <h3 className="font-semibold text-gray-800">Low Stock</h3>
+            {d.lowStockCount > 0 && (
+              <span className="ml-auto text-xs font-bold bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">
+                {d.lowStockCount}
+              </span>
+            )}
           </div>
           <div className="space-y-2 max-h-64 overflow-y-auto scrollbar-thin">
             {(lowStockData?.data?.products || []).length === 0 ? (
@@ -237,13 +332,19 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* ── Smart Insights Section ── */}
+      <InsightWidgets />
+
       {/* ── Summary metrics ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard icon={Users}   label="Customers"    value={d.totalCustomers || 0} color="blue"   sub="total registered" />
-        <StatCard icon={Package} label="Products"     value={d.totalProducts  || 0} color="purple" />
-        <StatCard icon={Receipt} label="Expenses"     rawValue={d.totalExpenses}                                                color="red"    sub="all time" />
-        <StatCard icon={IndianRupee} label="Avg Sale" rawValue={d.totalSalesCount ? d.totalRevenue / d.totalSalesCount : 0} color="orange" sub="per transaction" />
+        <StatCard icon={Users}       label="Customers"  value={d.totalCustomers || 0} color="blue"   sub="total registered" />
+        <StatCard icon={Package}     label="Products"   value={d.totalProducts  || 0} color="purple" />
+        <StatCard icon={Receipt}     label="Expenses"   rawValue={d.totalExpenses}    color="red"    sub="all time" />
+        <StatCard icon={IndianRupee} label="Avg Sale"   rawValue={d.totalSalesCount ? d.totalRevenue / d.totalSalesCount : 0} color="orange" sub="per transaction" />
       </div>
+
+      {/* ── Floating Quick Actions ── */}
+      <QuickActions />
     </div>
   );
 }

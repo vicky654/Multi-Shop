@@ -272,7 +272,7 @@ export default function Billing() {
                 <Zap className="w-4 h-4 text-white" />
               </div>
               <div>
-                <h1 className="text-sm font-bold text-gray-900 leading-tight">POS Billing</h1>
+                <h1 className="text-sm font-semibold text-gray-900 leading-tight">POS Billing</h1>
                 <p className="text-[11px] text-gray-400 leading-tight">
                   {activeShop?.name} &nbsp;·&nbsp;
                   <kbd className="px-1 bg-gray-100 rounded text-[10px] font-mono">Ctrl+↵</kbd> to checkout
@@ -322,7 +322,7 @@ export default function Billing() {
           <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white">
             <div className="flex items-center gap-2">
               <ShoppingCart className="w-4.5 h-4.5 text-blue-600" />
-              <span className="font-bold text-gray-900 text-sm">Cart</span>
+              <span className="font-semibold text-gray-900 text-sm">Cart</span>
               <AnimatePresence>
                 {cart.length > 0 && (
                   <motion.span
@@ -505,7 +505,7 @@ export default function Billing() {
 
               {/* Mobile cart header */}
               <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 shrink-0">
-                <div className="flex items-center gap-2 font-bold text-gray-900">
+                <div className="flex items-center gap-2 font-semibold text-gray-900">
                   <ShoppingCart className="w-4 h-4 text-blue-600" />
                   Cart ({cart.length})
                 </div>

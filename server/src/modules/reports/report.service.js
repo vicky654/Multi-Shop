@@ -225,7 +225,64 @@ const getDailyClosing = async (user, shopId, date) => {
   };
 };
 
+// ── Simple Period Report (today / week / month) ───────────────────────────────
+const getSimpleReport = async (user, shopId, period = 'today') => {
+  const sf  = shopFilter(user, shopId);
+  const now = new Date();
+  let startDate;
+
+  if (period === 'today') {
+    startDate = new Date(now); startDate.setHours(0, 0, 0, 0);
+  } else if (period === 'week') {
+    startDate = new Date(Date.now() - 7 * 86400000);
+  } else {
+    // month
+    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+  }
+
+  const matchSale = { ...sf, status: 'completed', isPrivate: { $ne: true }, createdAt: { $gte: startDate } };
+  const matchExp  = { ...sf, date: { $gte: startDate } };
+
+  const [salesRes, expRes, topProductRes, paymentRes] = await Promise.all([
+    Sale.aggregate([
+      { $match: matchSale },
+      { $group: { _id: null, revenue: { $sum: '$totalAmount' }, profit: { $sum: '$totalProfit' }, count: { $sum: 1 } } },
+    ]),
+    Expense.aggregate([
+      { $match: matchExp },
+      { $group: { _id: null, total: { $sum: '$amount' } } },
+    ]),
+    Sale.aggregate([
+      { $match: matchSale },
+      { $unwind: '$items' },
+      { $group: { _id: '$items.product', name: { $first: '$items.name' }, qty: { $sum: '$items.quantity' }, revenue: { $sum: '$items.subtotal' } } },
+      { $sort: { qty: -1 } },
+      { $limit: 1 },
+    ]),
+    Sale.aggregate([
+      { $match: matchSale },
+      { $group: { _id: '$paymentMethod', total: { $sum: '$totalAmount' }, count: { $sum: 1 } } },
+      { $sort: { total: -1 } },
+    ]),
+  ]);
+
+  const revenue  = salesRes[0]?.revenue || 0;
+  const profit   = salesRes[0]?.profit  || 0;
+  const orders   = salesRes[0]?.count   || 0;
+  const expenses = expRes[0]?.total     || 0;
+
+  return {
+    period,
+    startDate,
+    sales:          { revenue, profit, orders },
+    expenses,
+    netProfit:      profit - expenses,
+    topProduct:     topProductRes[0] || null,
+    paymentBreakdown: paymentRes,
+  };
+};
+
 module.exports = {
   getDashboardSummary, getSalesTrend, getBestSellers,
-  getProfitLoss, getPaymentBreakdown, getDailyClosing,
+  getProfitLoss, getPaymentBreakdown, getDailyClosing, getSimpleReport,
 };

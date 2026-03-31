@@ -76,7 +76,7 @@ function CustomerForm({ form, setForm, onSubmit, loading, shops, shopId }) {
           required
           value={form.shopId || shopId}
           onChange={(e) => upd('shopId', e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+          className="ui-select"
         >
           {shops.map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
         </select>
@@ -106,9 +106,8 @@ function CustomerForm({ form, setForm, onSubmit, loading, shops, shopId }) {
           placeholder="e.g. 22AAAAA0000A1Z5"
           maxLength={15}
           className={[
-            'w-full px-3 py-2 border rounded-lg text-sm font-mono tracking-wider transition',
-            'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent',
-            gstErr ? 'border-red-400 bg-red-50' : 'border-gray-300 bg-white',
+            'ui-input font-mono tracking-wider',
+            gstErr ? 'border-red-400 bg-red-50' : '',
           ].join(' ')}
         />
         {gstErr && <p className="text-xs text-red-500">{gstErr}</p>}
@@ -203,16 +202,16 @@ export default function Customers() {
     <div className="space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Customers</h1>
+          <h1 className="text-2xl font-semibold text-gray-900">Customers</h1>
           <p className="text-sm text-gray-500">{customers.length} customers</p>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition">
+        <button onClick={openCreate} className="btn-primary">
           <Plus className="w-4 h-4" /> Add Customer
         </button>
       </div>
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search customers…" className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search customers…" className="ui-input pl-9" />
       </div>
       <DataTable columns={columns} data={customers} loading={isLoading} emptyMessage="No customers yet. Add your first customer!" />
       <Modal open={showModal} onClose={closeModal} title={editCustomer ? 'Edit Customer' : 'Add Customer'}>

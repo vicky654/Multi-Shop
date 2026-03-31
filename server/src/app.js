@@ -23,6 +23,9 @@ const automationRoutes    = require('./modules/campaigns/automation.routes');
 const scheduler           = require('./modules/campaigns/scheduler');
 const notifyRoutes        = require('./modules/notify/notify.routes');
 const logsRoutes          = require('./modules/logs/logs.routes');
+const alertRoutes         = require('./modules/alerts/alert.routes');
+const parserRoutes        = require('./modules/parser/parser.routes');
+const insightsRoutes      = require('./modules/insights/insights.routes');
 
 const app = express();
 
@@ -78,6 +81,9 @@ app.use('/api/campaigns',     campaignRoutes);
 app.use('/api/automations',   automationRoutes);
 app.use('/api/notify',        notifyRoutes);
 app.use('/api/logs',          logsRoutes);
+app.use('/api/alerts',        alertRoutes);
+app.use('/api/parser',        parserRoutes);
+app.use('/api/insights',      insightsRoutes);
 
 scheduler.start();
 

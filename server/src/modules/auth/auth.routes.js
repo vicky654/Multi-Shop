@@ -13,9 +13,12 @@ router.get('/me',              protect, ctrl.getMe);
 router.post('/onboarding/complete', protect, ctrl.completeOnboarding);
 
 // Owner manages staff
-router.post('/staff', protect, allowRoles('owner', 'super_admin'), ctrl.createStaff);
-router.get('/staff', protect, allowRoles('owner', 'super_admin'), ctrl.getStaff);
-router.put('/staff/:id', protect, allowRoles('owner', 'super_admin'), ctrl.updateStaff);
-router.delete('/staff/:id', protect, allowRoles('owner', 'super_admin'), ctrl.deleteStaff);
+router.post('/staff',                         protect, allowRoles('owner', 'super_admin'), ctrl.createStaff);
+router.get('/staff',                          protect, allowRoles('owner', 'super_admin'), ctrl.getStaff);
+router.put('/staff/:id',                      protect, allowRoles('owner', 'super_admin'), ctrl.updateStaff);
+router.delete('/staff/:id',                   protect, allowRoles('owner', 'super_admin'), ctrl.deleteStaff);
+
+// Impersonation — owner/super_admin only, rate-limited to prevent abuse
+router.post('/staff/:staffId/impersonate',    protect, allowRoles('owner', 'super_admin'), ctrl.impersonate);
 
 module.exports = router;
