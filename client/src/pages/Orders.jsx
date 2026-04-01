@@ -403,7 +403,7 @@ export default function Orders() {
       style={{ background: '#0F172A' }}
       {...swipeHandlers}
     >
-      <div className="max-w-2xl mx-auto space-y-4">
+      <div className=" mx-auto space-y-4">
 
         {/* Pull-to-refresh indicator */}
         <RefreshIndicator visible={refreshing} />
