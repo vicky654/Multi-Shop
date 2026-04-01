@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Outlet, useNavigate } from 'react-router-dom';
+import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { FlaskConical, X, Wand2 } from 'lucide-react';
 import AlertPanel from '../components/AlertPanel';
@@ -12,7 +13,8 @@ import Sidebar    from '../components/Sidebar';
 import Header     from '../components/Header';
 import BottomNav  from '../components/BottomNav';
 import Onboarding    from '../components/Onboarding';
-import OfflineBanner from '../components/OfflineBanner';
+import OfflineBanner        from '../components/OfflineBanner';
+import ImpersonationBanner  from '../components/ImpersonationBanner';
 import TourGuide     from '../components/TourGuide';
 import HelpPanel     from '../components/HelpPanel';
 import { useTour }   from '../hooks/useTour';
@@ -45,6 +47,8 @@ export default function DashboardLayout() {
 
   // Initialise Capacitor push notifications (no-op on web)
   usePushNotifications();
+
+  const location = useLocation();
 
   const { setShops, activeShop } = useShopStore();
   const user                     = useAuthStore((s) => s.user);
@@ -141,6 +145,9 @@ export default function DashboardLayout() {
 
         <OfflineBanner />
 
+        {/* Impersonation Banner — always on top when impersonating */}
+        <ImpersonationBanner />
+
         {/* Demo Mode Banner — shown when demo is active */}
         {isDemoMode && activeShop && (
           <div className="shrink-0 bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center justify-between gap-3">
@@ -185,9 +192,18 @@ export default function DashboardLayout() {
         )}
 
         <main className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin pb-16 lg:pb-0">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-            <Outlet />
-          </div>
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={location.pathname}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.18, ease: [0.25, 0.1, 0.25, 1] }}
+              className="max-w-7xl mx-auto px-4 sm:px-6 py-6"
+            >
+              <Outlet />
+            </motion.div>
+          </AnimatePresence>
         </main>
       </div>
 

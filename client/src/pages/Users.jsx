@@ -1,14 +1,16 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import {
   Users, Plus, Edit2, Trash2, Save, X,
   Mail, Phone, Shield, Store, Eye, EyeOff,
-  CheckCircle, XCircle, UserCog,
+  CheckCircle, XCircle, UserCog, LogIn, Loader2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { usersApi }    from '../api/users.api';
 import { rolesApi }    from '../api/roles.api';
 import useShopStore    from '../store/shopStore';
+import useAuthStore    from '../store/authStore';
 import { usePermissions } from '../hooks/usePermissions';
 
 // ── Role display config ───────────────────────────────────────────────────────
@@ -191,9 +193,10 @@ function StaffForm({ initial = EMPTY_FORM, isEdit = false, onSave, onCancel, sav
 }
 
 // ── Staff card ─────────────────────────────────────────────────────────────────
-function StaffCard({ member, onEdit, onDelete, onToggleActive, canEdit }) {
-  const meta = ROLE_META[member.role] || { label: member.role, color: 'bg-gray-100 text-gray-700 border-gray-200' };
+function StaffCard({ member, onEdit, onDelete, onToggleActive, onImpersonate, canEdit, impersonatingId }) {
+  const meta     = ROLE_META[member.role] || { label: member.role, color: 'bg-gray-100 text-gray-700 border-gray-200' };
   const initials = member.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+  const isLoading = impersonatingId === member._id;
 
   return (
     <div className={`bg-white border rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow ${
@@ -268,19 +271,40 @@ function StaffCard({ member, onEdit, onDelete, onToggleActive, canEdit }) {
           </div>
         )}
       </div>
+
+      {/* ── Login as Staff footer ── */}
+      {canEdit && member.isActive && (
+        <div className="border-t border-gray-100 px-4 py-2.5 bg-gray-50 flex items-center justify-between">
+          <p className="text-[10px] text-gray-400">View app as this staff member</p>
+          <button
+            onClick={() => onImpersonate(member)}
+            disabled={isLoading}
+            className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+          >
+            {isLoading
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <LogIn   className="w-3.5 h-3.5" />
+            }
+            {isLoading ? 'Switching…' : 'Login as Staff'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
 // ── Main Users page ────────────────────────────────────────────────────────────
 export default function UsersPage() {
-  const qc = useQueryClient();
+  const qc       = useQueryClient();
   const { shops } = useShopStore();
-  const { can }   = usePermissions();
-  const canEdit   = can('staff');
+  const { can, role }  = usePermissions();
+  const navigate = useNavigate();
+  const { startImpersonation, isImpersonating } = useAuthStore();
+  const canEdit  = can('staff');
 
-  const [mode,       setMode]       = useState(null); // null | 'create' | 'edit'
-  const [editTarget, setEditTarget] = useState(null);
+  const [mode,             setMode]             = useState(null); // null | 'create' | 'edit'
+  const [editTarget,       setEditTarget]       = useState(null);
+  const [impersonatingId,  setImpersonatingId]  = useState(null);
 
   // ── Data ──────────────────────────────────────────────────────────────────────
   const { data: staffData, isLoading } = useQuery({
@@ -326,6 +350,23 @@ export default function UsersPage() {
 
   const handleToggleActive = (member) => {
     updateMut.mutate({ id: member._id, data: { isActive: !member.isActive } });
+  };
+
+  const handleImpersonate = async (member) => {
+    if (isImpersonating) {
+      toast.error('Exit current impersonation session first');
+      return;
+    }
+    setImpersonatingId(member._id);
+    try {
+      await startImpersonation(member._id);
+      toast.success(`Now viewing as ${member.name}`);
+      navigate('/dashboard');
+    } catch (e) {
+      toast.error(e.message || 'Could not switch to staff session');
+    } finally {
+      setImpersonatingId(null);
+    }
   };
 
   const handleSave = (form) => {
@@ -469,7 +510,8 @@ export default function UsersPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {active.map((m) => (
                   <StaffCard key={m._id} member={m} canEdit={canEdit}
-                    onEdit={openEdit} onDelete={handleDelete} onToggleActive={handleToggleActive} />
+                    onEdit={openEdit} onDelete={handleDelete} onToggleActive={handleToggleActive}
+                    onImpersonate={handleImpersonate} impersonatingId={impersonatingId} />
                 ))}
               </div>
             </div>
@@ -484,7 +526,8 @@ export default function UsersPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {inactive.map((m) => (
                   <StaffCard key={m._id} member={m} canEdit={canEdit}
-                    onEdit={openEdit} onDelete={handleDelete} onToggleActive={handleToggleActive} />
+                    onEdit={openEdit} onDelete={handleDelete} onToggleActive={handleToggleActive}
+                    onImpersonate={handleImpersonate} impersonatingId={impersonatingId} />
                 ))}
               </div>
             </div>

@@ -54,7 +54,9 @@ export default function Billing() {
   // ── Checkout state ───────────────────────────────────────────────────────────
   const [customerId,     setCustomerId]     = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
-  const [paymentMethod,  setPaymentMethod]  = useState('cash');
+  const [paymentMethod,  setPaymentMethod]  = useState(
+    () => localStorage.getItem('ms_last_payment') || 'cash'
+  );
   const [notes,          setNotes]          = useState('');
   const [lastSale,       setLastSale]       = useState(null);
   const [showInvoice,    setShowInvoice]    = useState(false);
@@ -75,6 +77,26 @@ export default function Billing() {
     queryFn:  () => customersApi.getAll({ shopId, limit: 200 }),
     enabled:  !!shopId,
   });
+
+  // ── Persist last payment method ───────────────────────────────────────────────
+  const handlePaymentChange = useCallback((method) => {
+    setPaymentMethod(method);
+    localStorage.setItem('ms_last_payment', method);
+  }, []);
+
+  // ── Load repeat order from Orders page ───────────────────────────────────────
+  useEffect(() => {
+    const raw = sessionStorage.getItem('ms_repeat_order');
+    if (!raw) return;
+    sessionStorage.removeItem('ms_repeat_order');
+    try {
+      const items = JSON.parse(raw);
+      if (Array.isArray(items) && items.length > 0) {
+        setCart(items);
+        toast.success(`${items.length} item${items.length > 1 ? 's' : ''} loaded from previous order`);
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   // ── Mutations ────────────────────────────────────────────────────────────────
   const createSaleMut = useMutation({
@@ -396,7 +418,7 @@ export default function Billing() {
                 isAdding={quickAddMut.isPending}
               />
 
-              <PaymentSelector selected={paymentMethod} onChange={setPaymentMethod} />
+              <PaymentSelector selected={paymentMethod} onChange={handlePaymentChange} />
 
               {paymentMethod === 'credit' && (
                 <CreditFlow grandTotal={grandTotal} dueAmount={dueAmount} onChange={setDueAmount} />
@@ -549,7 +571,7 @@ export default function Billing() {
                   }}
                   isAdding={quickAddMut.isPending}
                 />
-                <PaymentSelector selected={paymentMethod} onChange={setPaymentMethod} />
+                <PaymentSelector selected={paymentMethod} onChange={handlePaymentChange} />
                 {paymentMethod === 'credit' && (
                   <CreditFlow grandTotal={grandTotal} dueAmount={dueAmount} onChange={setDueAmount} />
                 )}

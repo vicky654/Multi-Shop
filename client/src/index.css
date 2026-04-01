@@ -263,7 +263,41 @@ html.dark {
    ═══════════════════════════════════════════════════════════════ */
 @layer utilities {
 
-  /* Scrollbar */
+  /* ── Dynamic viewport height (iOS Safari / mobile browsers) ───── */
+  .h-dvh  { height: 100dvh; }
+  .min-h-dvh { min-height: 100dvh; }
+  .h-screen-safe { height: calc(var(--vh, 1vh) * 100); }
+
+  /* ── Safe area insets (iPhone notch / home indicator) ─────────── */
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .safe-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 0.5rem);
+  }
+
+  /* ── No scrollbar (cross-browser) ─────────────────────────────── */
+  .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+
+  /* ── Touch-friendly minimum tap target ─────────────────────────── */
+  .tap-target {
+    min-width: 44px;
+    min-height: 44px;
+    @apply touch-manipulation select-none;
+  }
+
+  /* ── Dark surface helpers (for premium dark pages like Orders) ─── */
+  .dark-surface     { background: #0F172A; }
+  .dark-card        { background: #1E293B; border: 1px solid #334155; }
+  .dark-text        { color: #E2E8F0; }
+  .dark-muted       { color: #94A3B8; }
+  .dark-subtle      { color: #64748B; }
+
+  /* ── Scrollbar */
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: var(--color-border) transparent;

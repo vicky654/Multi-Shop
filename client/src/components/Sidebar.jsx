@@ -5,6 +5,7 @@ import {
   Receipt, BarChart2, Settings, X, Store, ExternalLink,
   Zap, FlaskConical, UserCog, UserCheck, Shield, CheckCircle, Circle,
   ChevronRight, ChevronLeft, Sparkles, BookOpen, Megaphone, Activity, PanelLeftClose, PanelLeftOpen,
+  ClipboardList,
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import useShopStore  from '../store/shopStore';
@@ -18,6 +19,7 @@ const NAV = [
   { to: '/dashboard',   icon: LayoutDashboard, label: 'Dashboard',   perm: 'dashboard'  },
   { to: '/inventory',   icon: Package,         label: 'Inventory',   perm: 'inventory',  tour: 'nav-inventory' },
   { to: '/billing',     icon: ShoppingCart,    label: 'Billing',     perm: 'billing',    tour: 'nav-billing'   },
+  { to: '/orders',      icon: ClipboardList,   label: 'Orders',      perm: 'billing'    },
   { to: '/customers',   icon: Users,           label: 'Customers',   perm: 'customers'  },
   { to: '/expenses',    icon: Receipt,         label: 'Expenses',    perm: 'expenses'   },
   { to: '/reports',     icon: BarChart2,       label: 'Reports',     perm: 'reports',    tour: 'nav-reports'   },

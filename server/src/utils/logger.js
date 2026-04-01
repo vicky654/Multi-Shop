@@ -6,8 +6,8 @@ const isDev = process.env.NODE_ENV === 'development';
 const safeMetadata = (meta = {}) => {
   const safe = {};
   Object.entries(meta).forEach(([key, value]) => {
-    if (value && (typeof value === 'string' ? value.length <= 500 : 
-          typeof value === 'number' || typeof value === 'boolean' || 
+    if (value && (typeof value === 'string' ? value.length <= 500 :
+          typeof value === 'number' || typeof value === 'boolean' ||
           (Array.isArray(value) && value.length <= 20))) {
       safe[key] = value;
     }
@@ -23,19 +23,27 @@ const createLog = (context, action, module, message, status = 'success', metadat
     module,
     message,
     status,
-    metadata: safeMetadata(metadata)
+    metadata: safeMetadata(metadata),
   };
 
   // Non-blocking save
-  Log.create(logData).catch(err => {
-    // Silent fail - don't crash app
+  Log.create(logData).catch((err) => {
     if (isDev) console.error('Logger failed:', err.message);
   });
 
-  // Dev console
   if (isDev) {
-    const prefix = `[${status.toUpperCase()}]`;
-    console.log(prefix, `${module}.${action}`, message, context.userId ? `user:${context.userId}` : '', Object.keys(metadata).length ? `meta:${JSON.stringify(metadata).slice(0,100)}...` : '');
+    const prefix    = `[${status.toUpperCase()}]`;
+    const impStr    = context.actingAs ? ` [impersonating:${context.actingAs}]` : '';
+    const actorStr  = context.actorId  ? ` actor:${context.actorId}` : '';
+    console.log(
+      prefix,
+      `${module}.${action}`,
+      message,
+      context.userId ? `user:${context.userId}` : '',
+      actorStr,
+      impStr,
+      Object.keys(metadata).length ? `meta:${JSON.stringify(metadata).slice(0, 100)}` : '',
+    );
   }
 };
 
@@ -54,4 +62,3 @@ const logInfo = (req, module, message, metadata = {}) => {
 };
 
 module.exports = { logAction, logError, logInfo, LOG_ACTIONS };
-

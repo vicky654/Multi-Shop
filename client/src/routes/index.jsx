@@ -1,37 +1,49 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import useAuthStore from '../store/authStore';
 import ProtectedRoute from './ProtectedRoute';
 import DashboardLayout from '../layouts/DashboardLayout';
 import AuthLayout from '../layouts/AuthLayout';
-
-// Admin pages
-import Login       from '../pages/auth/Login';
-import Register    from '../pages/auth/Register';
-import Dashboard   from '../pages/Dashboard';
-import Inventory   from '../pages/Inventory';
-import Billing     from '../pages/Billing';
-import Customers   from '../pages/Customers';
-import Expenses    from '../pages/Expenses';
-import Reports     from '../pages/Reports';
-import Settings    from '../pages/Settings';
-import AiInsights  from '../pages/AiInsights';
-import Campaigns   from '../pages/Campaigns';
-import Roles       from '../pages/Roles';
-import Users       from '../pages/Users';
-import AdminPanel  from '../pages/AdminPanel';
-import SystemTest  from '../pages/SystemTest';
-import Logs         from '../pages/Logs';
 import LoadingSpinner from '../components/LoadingSpinner';
 
-// Customer shop pages
-import ShopLayout        from '../pages/shop/ShopLayout';
-import ShopHome          from '../pages/shop/ShopHome';
-import ShopListing       from '../pages/shop/ShopListing';
-import ShopProductDetail from '../pages/shop/ShopProductDetail';
-import ShopCart          from '../pages/shop/ShopCart';
-import CustomerShop      from '../pages/shop/CustomerShop';
-import SlugProductDetail from '../pages/shop/SlugProductDetail';
+// ── Auth pages (small, eager-load) ───────────────────────────────────────────
+import Login    from '../pages/auth/Login';
+import Register from '../pages/auth/Register';
+
+// ── Admin pages (lazy-loaded for code splitting) ──────────────────────────────
+const Dashboard   = lazy(() => import('../pages/Dashboard'));
+const Inventory   = lazy(() => import('../pages/Inventory'));
+const Billing     = lazy(() => import('../pages/Billing'));
+const Customers   = lazy(() => import('../pages/Customers'));
+const Expenses    = lazy(() => import('../pages/Expenses'));
+const Reports     = lazy(() => import('../pages/Reports'));
+const Settings    = lazy(() => import('../pages/Settings'));
+const AiInsights  = lazy(() => import('../pages/AiInsights'));
+const Campaigns   = lazy(() => import('../pages/Campaigns'));
+const Roles       = lazy(() => import('../pages/Roles'));
+const Users       = lazy(() => import('../pages/Users'));
+const AdminPanel  = lazy(() => import('../pages/AdminPanel'));
+const SystemTest  = lazy(() => import('../pages/SystemTest'));
+const Logs        = lazy(() => import('../pages/Logs'));
+const Orders      = lazy(() => import('../pages/Orders'));
+
+// ── Customer shop pages (separate bundle) ─────────────────────────────────────
+const ShopLayout        = lazy(() => import('../pages/shop/ShopLayout'));
+const ShopHome          = lazy(() => import('../pages/shop/ShopHome'));
+const ShopListing       = lazy(() => import('../pages/shop/ShopListing'));
+const ShopProductDetail = lazy(() => import('../pages/shop/ShopProductDetail'));
+const ShopCart          = lazy(() => import('../pages/shop/ShopCart'));
+const CustomerShop      = lazy(() => import('../pages/shop/CustomerShop'));
+const SlugProductDetail = lazy(() => import('../pages/shop/SlugProductDetail'));
+
+// ── Fallback spinner for Suspense ─────────────────────────────────────────────
+function PageLoader() {
+  return (
+    <div className="flex h-full min-h-[40vh] items-center justify-center">
+      <LoadingSpinner size="lg" />
+    </div>
+  );
+}
 
 export default function AppRoutes() {
   const { fetchMe, token, initialized } = useAuthStore();
@@ -50,48 +62,50 @@ export default function AppRoutes() {
   }
 
   return (
-    <Routes>
-      {/* ── Auth routes ── */}
-      <Route element={<AuthLayout />}>
-        <Route path="/login"    element={<Login />} />
-        <Route path="/register" element={<Register />} />
-      </Route>
-
-      {/* ── Slug-based public shop (e.g. /shop/vicky-fashion) ── */}
-      {/* Static sub-paths (/shop/products, /shop/cart) take priority over /:slug */}
-      <Route path="/shop/:slug"              element={<CustomerShop />} />
-      <Route path="/shop/:slug/product/:id"  element={<SlugProductDetail />} />
-
-      {/* ── Query-param shop (legacy / internal) ── */}
-      <Route element={<ShopLayout />}>
-        <Route path="/shop"                   element={<ShopHome />} />
-        <Route path="/shop/products"          element={<ShopListing />} />
-        <Route path="/shop/products/:id"      element={<ShopProductDetail />} />
-        <Route path="/shop/cart"              element={<ShopCart />} />
-      </Route>
-
-      {/* ── Protected admin dashboard ── */}
-      <Route element={<ProtectedRoute />}>
-        <Route element={<DashboardLayout />}>
-          <Route path="/"          element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/inventory" element={<Inventory />} />
-          <Route path="/billing"   element={<Billing />} />
-          <Route path="/customers" element={<Customers />} />
-          <Route path="/expenses"  element={<Expenses />} />
-          <Route path="/reports"      element={<Reports />} />
-          <Route path="/settings"     element={<Settings />} />
-          <Route path="/ai-insights"  element={<AiInsights />} />
-          <Route path="/campaigns"    element={<Campaigns />} />
-          <Route path="/roles"        element={<Roles />} />
-          <Route path="/users"        element={<Users />} />
-          <Route path="/admin"        element={<AdminPanel />} />
-<Route path="/system-test"  element={<SystemTest />} />
-          <Route path="/logs"        element={<Logs />} />
+    <Suspense fallback={<PageLoader />}>
+      <Routes>
+        {/* ── Auth routes ── */}
+        <Route element={<AuthLayout />}>
+          <Route path="/login"    element={<Login />} />
+          <Route path="/register" element={<Register />} />
         </Route>
-      </Route>
 
-      <Route path="*" element={<Navigate to="/login" replace />} />
-    </Routes>
+        {/* ── Slug-based public shop (e.g. /shop/vicky-fashion) ── */}
+        <Route path="/shop/:slug"              element={<CustomerShop />} />
+        <Route path="/shop/:slug/product/:id"  element={<SlugProductDetail />} />
+
+        {/* ── Query-param shop (legacy / internal) ── */}
+        <Route element={<ShopLayout />}>
+          <Route path="/shop"              element={<ShopHome />} />
+          <Route path="/shop/products"     element={<ShopListing />} />
+          <Route path="/shop/products/:id" element={<ShopProductDetail />} />
+          <Route path="/shop/cart"         element={<ShopCart />} />
+        </Route>
+
+        {/* ── Protected admin dashboard ── */}
+        <Route element={<ProtectedRoute />}>
+          <Route element={<DashboardLayout />}>
+            <Route path="/"             element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard"    element={<Dashboard />} />
+            <Route path="/inventory"    element={<Inventory />} />
+            <Route path="/billing"      element={<Billing />} />
+            <Route path="/orders"       element={<Orders />} />
+            <Route path="/customers"    element={<Customers />} />
+            <Route path="/expenses"     element={<Expenses />} />
+            <Route path="/reports"      element={<Reports />} />
+            <Route path="/settings"     element={<Settings />} />
+            <Route path="/ai-insights"  element={<AiInsights />} />
+            <Route path="/campaigns"    element={<Campaigns />} />
+            <Route path="/roles"        element={<Roles />} />
+            <Route path="/users"        element={<Users />} />
+            <Route path="/admin"        element={<AdminPanel />} />
+            <Route path="/system-test"  element={<SystemTest />} />
+            <Route path="/logs"         element={<Logs />} />
+          </Route>
+        </Route>
+
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    </Suspense>
   );
 }

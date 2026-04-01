@@ -67,6 +67,16 @@ export default {
         'fade-in':  'fade-in 0.2s ease-out',
       },
 
+      // ── Screen sizes (adds dvh support) ──────────────────────────
+      height: {
+        'dvh': '100dvh',
+        'svh': '100svh',
+        'lvh': '100lvh',
+      },
+      minHeight: {
+        'dvh': '100dvh',
+      },
+
       // ── Font ─────────────────────────────────────────────────────
       fontFamily: {
         sans: [
