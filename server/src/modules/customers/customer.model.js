@@ -29,5 +29,7 @@ const customerSchema = new mongoose.Schema(
 
 customerSchema.index({ shopId: 1, phone: 1 });
 customerSchema.index({ name: 'text', phone: 'text' });
+// For customer count in dashboard: countDocuments({ isActive:true, shopId })
+customerSchema.index({ shopId: 1, isActive: 1 });
 
 module.exports = mongoose.model('Customer', customerSchema);

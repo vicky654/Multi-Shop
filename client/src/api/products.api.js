@@ -38,4 +38,12 @@ export const productsApi = {
 
   // Bulk delete — ids: string[]
   bulkDelete: (ids) => api.delete('/products/bulk', { data: { ids } }),
+
+  // Stock adjustment — delta can be negative (damage/theft) or positive (restock)
+  adjustStock: (id, { delta, reason, notes }) =>
+    api.patch(`/products/${id}/adjust-stock`, { delta, reason, notes }),
+
+  // Bulk audit — items: [{ productId, physicalCount }]
+  bulkAuditAdjust: (shopId, items) =>
+    api.post('/products/audit/bulk', { shopId, items }),
 };

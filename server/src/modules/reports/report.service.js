@@ -1,9 +1,15 @@
+const mongoose = require('mongoose');
 const Sale    = require('../sales/sale.model');
 const Product = require('../products/product.model');
 const Expense = require('../expenses/expense.model');
 const Customer= require('../customers/customer.model');
+const cache   = require('../../utils/cache');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+const toObjectId = (id) => {
+  try { return new mongoose.Types.ObjectId(id.toString()); } catch { return null; }
+};
+
 const dateRange = (startDate, endDate) => {
   const range = {};
   if (startDate) range.$gte = new Date(startDate);
@@ -11,10 +17,11 @@ const dateRange = (startDate, endDate) => {
   return Object.keys(range).length ? range : undefined;
 };
 
+// aggregate() does NOT auto-cast strings → ObjectId the way .find() does.
 const shopFilter = (user, shopId) => {
-  if (shopId) return { shopId };
+  if (shopId) return { shopId: toObjectId(shopId) };
   if (user.role === 'super_admin') return {};
-  return { shopId: { $in: user.shops } };
+  return { shopId: { $in: (user.shops || []).map(toObjectId).filter(Boolean) } };
 };
 
 // Exclude private sales unless caller explicitly opts in
@@ -23,6 +30,11 @@ const privateFilter = (includePrivate) =>
 
 // ── Overview Dashboard ────────────────────────────────────────────────────────
 const getDashboardSummary = async (user, shopId, { includePrivate = false } = {}) => {
+  // Cache per shop (or per user for multi-shop owners), 2-minute TTL
+  const cacheKey = `dashboard:${shopId || user._id.toString()}:${includePrivate}`;
+  const cached   = cache.get(cacheKey);
+  if (cached) return cached;
+
   const pf     = privateFilter(includePrivate);
   const sFilter = { status: 'completed', ...pf, ...shopFilter(user, shopId) };
   const pFilter = { isActive: true, ...shopFilter(user, shopId) };
@@ -56,7 +68,7 @@ const getDashboardSummary = async (user, shopId, { includePrivate = false } = {}
     ]),
   ]);
 
-  return {
+  const result = {
     totalRevenue:    totalSalesResult[0]?.revenue || 0,
     totalProfit:     totalSalesResult[0]?.profit   || 0,
     totalSalesCount: totalSalesResult[0]?.count    || 0,
@@ -68,6 +80,9 @@ const getDashboardSummary = async (user, shopId, { includePrivate = false } = {}
     totalCustomers,
     totalExpenses:   totalExpensesResult[0]?.total || 0,
   };
+
+  cache.set(cacheKey, result, 120); // 2-minute TTL
+  return result;
 };
 
 // ── Daily / Monthly Sales Chart ───────────────────────────────────────────────

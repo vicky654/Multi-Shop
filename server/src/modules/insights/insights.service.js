@@ -1,10 +1,16 @@
+const mongoose = require('mongoose');
 const Product = require('../products/product.model');
 const Sale    = require('../sales/sale.model');
 
+const toObjectId = (id) => {
+  try { return new mongoose.Types.ObjectId(id.toString()); } catch { return null; }
+};
+
+// aggregate() does NOT auto-cast strings → ObjectId the way .find() does.
 const shopFilter = (user, shopId) => {
-  if (shopId) return { shopId };
+  if (shopId) return { shopId: toObjectId(shopId) };
   if (user.role === 'super_admin') return {};
-  return { shopId: { $in: user.shops } };
+  return { shopId: { $in: (user.shops || []).map(toObjectId).filter(Boolean) } };
 };
 
 // ── 1. Restock Suggestions ────────────────────────────────────────────────────

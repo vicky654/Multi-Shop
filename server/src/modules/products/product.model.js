@@ -72,5 +72,7 @@ productSchema.index({ isFeatured: 1, shopId: 1 });
 productSchema.index({ isTrending: 1, shopId: 1 });
 productSchema.index({ isNewArrival: 1, shopId: 1 });
 productSchema.index({ name: 'text', category: 'text', description: 'text' });
+// Low-stock queries: { isActive:1, stock:1, shopId:1 } — used by alerts & insights
+productSchema.index({ shopId: 1, isActive: 1, stock: 1 });
 
 module.exports = mongoose.model('Product', productSchema);

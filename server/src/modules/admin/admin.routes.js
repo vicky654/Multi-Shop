@@ -5,10 +5,14 @@ const { allowRoles }  = require('../../middlewares/role.middleware');
 
 router.use(protect, allowRoles('super_admin'));
 
-router.get('/overview',       ctrl.getOverview);
-router.get('/owners',         ctrl.getOwners);
-router.get('/shops',          ctrl.getShops);
-router.post('/owners',        ctrl.createOwner);
+router.get('/overview',           ctrl.getOverview);
+router.get('/owners',             ctrl.getOwners);
+router.get('/shops',              ctrl.getShops);
+router.post('/owners',            ctrl.createOwner);
 router.patch('/users/:id/toggle', ctrl.toggleUser);
+
+// ── Analytics + Console (super_admin only, already enforced by router.use above)
+router.get('/analytics',          ctrl.getAnalytics);
+router.get('/console-logs',       ctrl.getConsoleLogs);
 
 module.exports = router;

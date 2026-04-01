@@ -25,28 +25,37 @@ export default function Expenses() {
   const { data, isLoading } = useQuery({
     queryKey: ['expenses', shopId],
     queryFn: () => expensesApi.getAll({ shopId }),
+    staleTime: 5 * 60 * 1000,
+    enabled: !!shopId,
   });
 
   const { data: summaryData } = useQuery({
     queryKey: ['expense-summary', shopId],
     queryFn: () => expensesApi.getSummary({ shopId }),
+    staleTime: 5 * 60 * 1000,
+    enabled: !!shopId,
   });
+
+  const invalidateAll = () => {
+    qc.invalidateQueries({ queryKey: ['expenses'] });
+    qc.invalidateQueries({ queryKey: ['expense-summary'] });
+  };
 
   const createMut = useMutation({
     mutationFn: (d) => expensesApi.create(d),
-    onSuccess: () => { qc.invalidateQueries(['expenses']); toast.success('Expense added'); closeModal(); },
+    onSuccess: () => { invalidateAll(); toast.success('Expense added'); closeModal(); },
     onError: (e) => toast.error(e.message),
   });
 
   const updateMut = useMutation({
     mutationFn: ({ id, data }) => expensesApi.update(id, data),
-    onSuccess: () => { qc.invalidateQueries(['expenses']); toast.success('Expense updated'); closeModal(); },
+    onSuccess: () => { invalidateAll(); toast.success('Expense updated'); closeModal(); },
     onError: (e) => toast.error(e.message),
   });
 
   const deleteMut = useMutation({
     mutationFn: (id) => expensesApi.delete(id),
-    onSuccess: () => { qc.invalidateQueries(['expenses']); toast.success('Expense deleted'); },
+    onSuccess: () => { invalidateAll(); toast.success('Expense deleted'); },
     onError: (e) => toast.error(e.message),
   });
 

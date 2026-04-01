@@ -22,7 +22,9 @@ const AiInsights  = lazy(() => import('../pages/AiInsights'));
 const Campaigns   = lazy(() => import('../pages/Campaigns'));
 const Roles       = lazy(() => import('../pages/Roles'));
 const Users       = lazy(() => import('../pages/Users'));
-const AdminPanel  = lazy(() => import('../pages/AdminPanel'));
+const AdminPanel      = lazy(() => import('../pages/AdminPanel'));
+const AdminAnalytics  = lazy(() => import('../pages/AdminAnalytics'));
+const AdminConsole    = lazy(() => import('../pages/AdminConsole'));
 const SystemTest  = lazy(() => import('../pages/SystemTest'));
 const Logs        = lazy(() => import('../pages/Logs'));
 const Orders      = lazy(() => import('../pages/Orders'));
@@ -98,7 +100,9 @@ export default function AppRoutes() {
             <Route path="/campaigns"    element={<Campaigns />} />
             <Route path="/roles"        element={<Roles />} />
             <Route path="/users"        element={<Users />} />
-            <Route path="/admin"        element={<AdminPanel />} />
+            <Route path="/admin"            element={<AdminPanel />} />
+            <Route path="/admin/analytics" element={<AdminAnalytics />} />
+            <Route path="/admin/console"   element={<AdminConsole />} />
             <Route path="/system-test"  element={<SystemTest />} />
             <Route path="/logs"         element={<Logs />} />
           </Route>

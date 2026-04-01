@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import {
   Shield, Users, Store, Plus, ChevronRight, ChevronLeft,
   Check, Eye, EyeOff, ToggleLeft, ToggleRight, Building2,
   TrendingUp, UserCheck, AlertCircle, X, Search,
+  BarChart3, Terminal,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { adminApi } from '../api/admin.api';
@@ -220,6 +222,7 @@ function CreateOwnerWizard({ onClose, onSuccess }) {
 
 // ── AdminPanel ─────────────────────────────────────────────────────────────────
 export default function AdminPanel() {
+  const navigate = useNavigate();
   const [tab,        setTab]        = useState('owners');
   const [showWizard, setShowWizard] = useState(false);
   const [search,     setSearch]     = useState('');
@@ -273,13 +276,29 @@ export default function AdminPanel() {
             <p className="text-sm text-gray-500">Platform management</p>
           </div>
         </div>
-        <button
-          onClick={() => setShowWizard(true)}
-          className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition text-sm shadow-sm"
-        >
-          <Plus className="w-4 h-4" />
-          Create Shop Owner
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => navigate('/admin/analytics')}
+            className="flex items-center gap-2 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-medium rounded-xl transition text-sm border border-indigo-200"
+          >
+            <BarChart3 className="w-4 h-4" />
+            Analytics
+          </button>
+          <button
+            onClick={() => navigate('/admin/console')}
+            className="flex items-center gap-2 px-3 py-2 bg-gray-900 hover:bg-gray-800 text-white font-medium rounded-xl transition text-sm"
+          >
+            <Terminal className="w-4 h-4" />
+            Console
+          </button>
+          <button
+            onClick={() => setShowWizard(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition text-sm shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Create Owner
+          </button>
+        </div>
       </div>
 
       {/* Stats */}

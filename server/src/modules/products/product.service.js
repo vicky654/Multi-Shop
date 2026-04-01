@@ -285,6 +285,86 @@ const exportAllProducts = async (user, shopId) => {
   return { csv: rows.join('\n'), count: products.length };
 };
 
+// ── Stock Adjustment (damage / theft / restock / audit correction) ────────────
+const ADJUSTMENT_REASONS = ['restock', 'damage', 'theft', 'correction', 'audit', 'return'];
+
+const adjustStock = async (id, user, { delta, reason, notes }) => {
+  const qty = parseInt(delta, 10);
+  if (isNaN(qty) || qty === 0)
+    throw Object.assign(new Error('delta must be a non-zero integer'), { status: 400 });
+  if (!ADJUSTMENT_REASONS.includes(reason))
+    throw Object.assign(new Error(`reason must be one of: ${ADJUSTMENT_REASONS.join(', ')}`), { status: 400 });
+
+  const product = await Product.findById(id);
+  if (!product || !product.isActive)
+    throw Object.assign(new Error('Product not found'), { status: 404 });
+  if (user.role !== 'super_admin' && !user.shops.some((s) => s.toString() === product.shopId.toString()))
+    throw Object.assign(new Error('Access denied'), { status: 403 });
+
+  const newStock = product.stock + qty;
+  if (newStock < 0)
+    throw Object.assign(new Error(`Cannot reduce stock below 0 (current: ${product.stock}, delta: ${qty})`), { status: 400 });
+
+  product.stock = newStock;
+  await product.save();
+  return { product, previousStock: product.stock - qty, newStock, delta: qty, reason };
+};
+
+// ── Bulk Stock Audit — apply multiple adjustments in one call ─────────────────
+// items: [{ productId, physicalCount }]
+const bulkAuditAdjust = async (user, shopId, items) => {
+  if (!Array.isArray(items) || items.length === 0)
+    throw Object.assign(new Error('No audit items provided'), { status: 400 });
+
+  const ids      = items.map((i) => i.productId);
+  const products = await Product.find({ _id: { $in: ids }, isActive: true }).lean();
+  const prodMap  = Object.fromEntries(products.map((p) => [p._id.toString(), p]));
+
+  // Access check — all products must belong to a shop the user owns
+  if (user.role !== 'super_admin') {
+    const shopStr = (user.shops || []).map((s) => s.toString());
+    for (const p of products) {
+      if (!shopStr.includes(p.shopId.toString()))
+        throw Object.assign(new Error(`Access denied for product ${p._id}`), { status: 403 });
+    }
+  }
+
+  const ops = [];
+  const results = [];
+
+  for (const item of items) {
+    const product = prodMap[item.productId?.toString()];
+    if (!product) continue;
+
+    const physicalCount = parseInt(item.physicalCount, 10);
+    if (isNaN(physicalCount) || physicalCount < 0) continue;
+
+    const delta = physicalCount - product.stock;
+    if (delta === 0) continue; // no discrepancy — skip
+
+    ops.push({
+      updateOne: {
+        filter: { _id: product._id },
+        update: { $set: { stock: physicalCount } },
+      },
+    });
+
+    results.push({
+      productId:     product._id,
+      name:          product.name,
+      previousStock: product.stock,
+      physicalCount,
+      discrepancy:   delta,
+    });
+  }
+
+  if (ops.length > 0) {
+    await Product.bulkWrite(ops, { ordered: false });
+  }
+
+  return { adjusted: results.length, items: results };
+};
+
 // ── Bulk Delete ───────────────────────────────────────────────────────────────
 const bulkDeleteProducts = async (user, ids) => {
   if (!Array.isArray(ids) || ids.length === 0)
@@ -304,4 +384,5 @@ module.exports = {
   deleteProduct, getCategories, getLowStockProducts,
   getPublicProducts, getPublicProductById, getPublicCategories,
   importProducts, exportAllProducts, bulkDeleteProducts,
+  adjustStock, bulkAuditAdjust,
 };

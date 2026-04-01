@@ -150,4 +150,27 @@ const bulkDelete = asyncHandler(async (req, res) => {
   success(res, result, `${result.deletedCount} products deleted`);
 });
 
-module.exports = { getAll, getOne, create, update, remove, categories, lowStock, getPublic, getPublicOne, getPublicCategories, importCSV, exportCSV, bulkDelete, analyzeImage };
+// ── Stock Adjustment ──────────────────────────────────────────────────────────
+const adjustStock = asyncHandler(async (req, res) => {
+  const { delta, reason, notes } = req.body;
+  logAction(req, LOG_ACTIONS.PRODUCT_UPDATE, 'products',
+    `Stock adjusted: ID ${req.params.id}, delta ${delta}, reason ${reason}`);
+  const result = await productService.adjustStock(req.params.id, req.user, { delta, reason, notes });
+  success(res, result, 'Stock adjusted');
+});
+
+// ── Bulk Stock Audit ──────────────────────────────────────────────────────────
+const bulkAuditAdjust = asyncHandler(async (req, res) => {
+  const { shopId, items } = req.body;
+  logAction(req, LOG_ACTIONS.PRODUCT_UPDATE, 'products',
+    `Stock audit submitted: ${items?.length || 0} items`);
+  const result = await productService.bulkAuditAdjust(req.user, shopId, items);
+  success(res, result, `Audit complete: ${result.adjusted} product(s) adjusted`);
+});
+
+module.exports = {
+  getAll, getOne, create, update, remove, categories, lowStock,
+  getPublic, getPublicOne, getPublicCategories,
+  importCSV, exportCSV, bulkDelete, analyzeImage,
+  adjustStock, bulkAuditAdjust,
+};

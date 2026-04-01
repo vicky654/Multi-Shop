@@ -10,7 +10,6 @@ const ProductCard = memo(function ProductCard({ product, inCart, onAdd }) {
 
   return (
     <motion.button
-      layout
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.95 }}
@@ -143,7 +142,7 @@ const CategoryTab = memo(function CategoryTab({ label, active, onClick }) {
 
 // ── Grid ──────────────────────────────────────────────────────────────────────
 const ProductGrid = memo(function ProductGrid({
-  products, cart, isLoading, onAdd, search, setSearch, searchRef,
+  products, cartMap, isLoading, onAdd, search, setSearch, searchRef,
 }) {
   const [selectedCategory, setSelectedCategory] = useState('all');
 
@@ -205,7 +204,7 @@ const ProductGrid = memo(function ProductGrid({
               <ProductCard
                 key={p._id}
                 product={p}
-                inCart={cart.find((i) => i.productId === p._id)}
+                inCart={cartMap?.get(p._id)}
                 onAdd={onAdd}
               />
             ))}

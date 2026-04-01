@@ -16,7 +16,15 @@ const login = asyncHandler(async (req, res) => {
     console.log('📩 Login request body:', { email: loginEmail, password: '***' });
   }
   const result = await authService.login({ email: loginEmail, password });
-  logAction(req, LOG_ACTIONS.LOGIN_SUCCESS, 'auth', `User logged in: ${result.user.email}`);
+
+  // Emit a dedicated high-visibility log for super_admin logins
+  if (result.user.role === 'super_admin') {
+    logAction(req, LOG_ACTIONS.SUPER_ADMIN_LOGIN, 'auth',
+      `Super admin logged in: ${result.user.email}`,
+      { ip: req.ip, userAgent: req.headers['user-agent']?.substring(0, 200) });
+  } else {
+    logAction(req, LOG_ACTIONS.LOGIN_SUCCESS, 'auth', `User logged in: ${result.user.email}`);
+  }
 
   if (process.env.NODE_ENV !== 'production') {
     console.log('📤 Sending response:', { success: true, user: result.user?.email, token: result.token?.slice(0, 20) + '…' });

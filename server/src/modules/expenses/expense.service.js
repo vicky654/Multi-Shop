@@ -1,4 +1,11 @@
-const Expense = require('./expense.model');
+const mongoose = require('mongoose');
+const Expense   = require('./expense.model');
+
+// aggregate() does NOT auto-cast strings → ObjectId the way .find() does.
+// This helper makes every shopId safe to use inside $match pipelines.
+const toObjectId = (id) => {
+  try { return new mongoose.Types.ObjectId(id.toString()); } catch { return null; }
+};
 
 const getExpenses = async (user, query) => {
   const { shopId, type, startDate, endDate, page = 1, limit = 20 } = query;
@@ -23,8 +30,16 @@ const getExpenses = async (user, query) => {
 
 const getTotalExpenses = async (user, shopId, month, year) => {
   const filter = {};
-  if (user.role !== 'super_admin') filter.shopId = { $in: user.shops };
-  if (shopId) filter.shopId = shopId;
+
+  // Cast to ObjectId — aggregate() does not auto-cast strings unlike .find()
+  if (user.role !== 'super_admin') {
+    filter.shopId = { $in: (user.shops || []).map(toObjectId).filter(Boolean) };
+  }
+  if (shopId) {
+    const oid = toObjectId(shopId);
+    if (oid) filter.shopId = oid;
+  }
+
   if (month && year) {
     const start = new Date(year, month - 1, 1);
     const end   = new Date(year, month, 0, 23, 59, 59);
@@ -34,6 +49,7 @@ const getTotalExpenses = async (user, shopId, month, year) => {
   const result = await Expense.aggregate([
     { $match: filter },
     { $group: { _id: '$type', total: { $sum: '$amount' } } },
+    { $sort: { total: -1 } },
   ]);
   return result;
 };

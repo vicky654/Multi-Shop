@@ -62,5 +62,9 @@ saleSchema.pre('save', async function (next) {
 saleSchema.index({ shopId: 1, createdAt: -1 });
 saleSchema.index({ customerId: 1 });
 saleSchema.index({ status: 1, shopId: 1 });
+// Compound index for report queries: filter by shop+status, sort by date
+saleSchema.index({ shopId: 1, status: 1, createdAt: -1 });
+// For online order listing filtered by shop
+saleSchema.index({ shopId: 1, isOnlineOrder: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Sale', saleSchema);

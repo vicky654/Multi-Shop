@@ -10,8 +10,9 @@ import { customersApi } from '../api/customers.api';
 import useShopStore     from '../store/shopStore';
 import useAuthStore     from '../store/authStore';
 import useSetupStore    from '../store/setupStore';
-import { usePermissions } from '../hooks/usePermissions';
-import { useCartSound }   from '../hooks/useCartSound';
+import { usePermissions }    from '../hooks/usePermissions';
+import { useCartSound }      from '../hooks/useCartSound';
+import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import InvoiceModal       from '../components/InvoiceModal';
 
 import ProductGrid        from '../components/billing/ProductGrid';
@@ -36,8 +37,16 @@ export default function Billing() {
   const searchRef      = useRef(null);
 
   // ── Cart state ───────────────────────────────────────────────────────────────
-  const [search,       setSearch]       = useState('');
-  const [cart,         setCart]         = useState([]);
+  const [search,          setSearch]       = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [cart,            setCart]         = useState([]);
+
+  // Debounce search so the product query only fires after 250ms of no typing
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
   const [discountMode, setDiscountMode] = useState('pct');
 
   // ── GST state ────────────────────────────────────────────────────────────────
@@ -67,9 +76,10 @@ export default function Billing() {
 
   // ── Queries ──────────────────────────────────────────────────────────────────
   const { data: productData, isLoading } = useQuery({
-    queryKey: ['products-billing', shopId, search],
-    queryFn:  () => productsApi.getAll({ shopId, search, limit: 40 }),
+    queryKey: ['products-billing', shopId, debouncedSearch],
+    queryFn:  () => productsApi.getAll({ shopId, search: debouncedSearch, limit: 40 }),
     enabled:  !!shopId,
+    staleTime: 2 * 60 * 1000,  // products unlikely to change mid-session
   });
 
   const { data: customerData } = useQuery({
@@ -194,6 +204,37 @@ export default function Billing() {
     });
   }, [productData, addToCart, beep]);
 
+  // ── Barcode scanner handler ───────────────────────────────────────────────────
+  const handleBarcode = useCallback((code) => {
+    if (!shopId) return;
+
+    // 1. Check products already loaded in the client cache (zero latency)
+    const loaded = productData?.data || [];
+    const match = loaded.find(
+      (p) => p.barcode === code || p.sku === code
+    );
+    if (match) {
+      addToCart(match);
+      toast.success(`Scanned: ${match.name}`, { duration: 1500 });
+      return;
+    }
+
+    // 2. Fall back to API search if not in current page results
+    productsApi.getAll({ shopId, search: code, limit: 1 }).then((res) => {
+      const found = res?.data?.[0];
+      if (found && (found.barcode === code || found.sku === code)) {
+        addToCart(found);
+        toast.success(`Scanned: ${found.name}`, { duration: 1500 });
+      } else {
+        toast.error(`No product found for barcode: ${code}`, { duration: 2000 });
+      }
+    }).catch(() => {
+      toast.error(`Scan failed for: ${code}`);
+    });
+  }, [shopId, productData, addToCart]);
+
+  useBarcodeScanner(handleBarcode);
+
   // ── Totals ───────────────────────────────────────────────────────────────────
   const totals = useMemo(() =>
     cart.reduce((acc, item) => {
@@ -259,6 +300,12 @@ export default function Billing() {
 
   const products  = productData?.data || [];
   const customers = customerData?.data || [];
+
+  // O(1) cart lookup — avoids cart.find() for every product card on every render
+  const cartMap = useMemo(
+    () => new Map(cart.map((i) => [i.productId, i])),
+    [cart]
+  );
   const canCreate = can('billing', 'create');
   const canAddCust= can('customers', 'create');
 
@@ -322,7 +369,7 @@ export default function Billing() {
           <div className="flex-1 overflow-y-auto p-4 scrollbar-thin">
             <ProductGrid
               products={products}
-              cart={cart}
+              cartMap={cartMap}
               isLoading={isLoading}
               onAdd={addToCart}
               search={search}

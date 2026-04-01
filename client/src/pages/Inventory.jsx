@@ -4,6 +4,7 @@ import {
   Plus, Search, Edit2, Trash2, AlertTriangle,
   Download, RefreshCw, Upload, Copy, Barcode,
   CheckSquare, Square, X as XIcon, Package, ScanLine,
+  ClipboardCheck, SlidersHorizontal,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -17,6 +18,8 @@ import ImageCarousel from '../components/ImageCarousel';
 import CSVImportModal from '../components/CSVImportModal';
 import ProductImportReviewModal from '../components/ProductImportReviewModal';
 import MiniTip from '../components/MiniTip';
+import StockAdjustModal from '../components/StockAdjustModal';
+import StockAuditPanel  from '../components/StockAuditPanel';
 
 // ── Mobile product card ───────────────────────────────────────────────────────
 function ProductCard({ product: p, isSelected, onSelect, onEdit, onDuplicate, onDelete }) {
@@ -233,6 +236,10 @@ export default function Inventory() {
   const [showImport,    setShowImport]    = useState(false);
   const [showBillScan,  setShowBillScan]  = useState(false);
 
+  // ── Stock adjust + audit ──────────────────────────────────────────────────────
+  const [adjustProduct, setAdjustProduct] = useState(null);  // product being adjusted
+  const [auditMode,     setAuditMode]     = useState(false); // audit panel open
+
   // ── Queries ───────────────────────────────────────────────────────────────────
   const { data, isLoading } = useQuery({
     queryKey: ['products', shopId, debouncedSearch, category],
@@ -383,6 +390,10 @@ export default function Inventory() {
             className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition">
             <Edit2 className="w-4 h-4" />
           </button>
+          <button onClick={() => setAdjustProduct(r)} title="Adjust Stock"
+            className="p-1.5 rounded-lg text-amber-600 hover:bg-amber-50 transition">
+            <SlidersHorizontal className="w-4 h-4" />
+          </button>
           <button onClick={() => openDuplicate(r)} title="Duplicate"
             className="p-1.5 rounded-lg text-purple-500 hover:bg-purple-50 transition">
             <Copy className="w-4 h-4" />
@@ -425,6 +436,17 @@ export default function Inventory() {
           <button onClick={() => setShowBillScan(true)}
             className="flex items-center gap-1.5 px-3 py-2 border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg text-sm font-medium transition">
             <ScanLine className="w-4 h-4" /> Scan Bill
+          </button>
+          <button
+            onClick={() => setAuditMode((v) => !v)}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition border ${
+              auditMode
+                ? 'bg-amber-500 text-white border-amber-500 hover:bg-amber-600'
+                : 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
+            }`}
+          >
+            <ClipboardCheck className="w-4 h-4" />
+            {auditMode ? 'Exit Audit' : 'Stock Audit'}
           </button>
           <button onClick={() => qc.invalidateQueries(['products'])}
             className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-600 hover:bg-gray-50 rounded-lg text-sm font-medium transition">

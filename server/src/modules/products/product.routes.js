@@ -44,6 +44,11 @@ router.post(
   ctrl.create
 );
 router.post(
+  '/audit/bulk',
+  allowRoles('super_admin', 'owner', 'manager', 'inventory_staff'),
+  ctrl.bulkAuditAdjust
+);
+router.post(
   '/import',
   allowRoles('super_admin', 'owner', 'manager', 'inventory_staff'),
   upload.single('file'),
@@ -69,6 +74,13 @@ router.delete(
   '/:id',
   allowRoles('super_admin', 'owner', 'manager'),
   ctrl.remove
+);
+
+// ── Stock adjustment ─────────────────────────────────────────────────────────
+router.patch(
+  '/:id/adjust-stock',
+  allowRoles('super_admin', 'owner', 'manager', 'inventory_staff'),
+  ctrl.adjustStock
 );
 
 module.exports = router;
