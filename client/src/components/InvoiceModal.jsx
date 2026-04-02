@@ -78,11 +78,11 @@ export default function InvoiceModal({ sale, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" data-testid="invoice-modal">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b">
-          <h2 className="font-bold text-gray-900 text-lg">Invoice — {sale.invoiceNumber}</h2>
+          <h2 className="font-bold text-gray-900 text-lg" data-testid="invoice-number">Invoice — {sale.invoiceNumber}</h2>
           <div className="flex gap-2">
             {hasCustomer && (
               <>

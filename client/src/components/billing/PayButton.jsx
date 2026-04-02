@@ -11,6 +11,7 @@ const PayButton = memo(function PayButton({
     <motion.button
       onClick={onClick}
       disabled={disabled}
+      data-testid="pay-button"
       whileTap={disabled ? undefined : { scale: 0.98 }}
       whileHover={disabled ? undefined : { scale: 1.01 }}
       transition={{ type: 'spring', stiffness: 400, damping: 20 }}

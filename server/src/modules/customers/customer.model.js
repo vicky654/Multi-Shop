@@ -20,7 +20,8 @@ const customerSchema = new mongoose.Schema(
     totalPurchases: { type: Number, default: 0 },
     totalSpent:     { type: Number, default: 0 },
     purchaseHistory: [purchaseHistorySchema],
-    notes:   { type: String },
+    notes:         { type: String },
+    creditBalance: { type: Number, default: 0, min: 0 }, // outstanding credit owed by customer
     isActive: { type: Boolean, default: true },
     isDemo:   { type: Boolean, default: false },
   },

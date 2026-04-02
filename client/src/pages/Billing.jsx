@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ShoppingCart, User, Zap, Calendar, EyeOff, Eye, ChevronUp } from 'lucide-react';
+import { ShoppingCart, User, Zap, Calendar, EyeOff, Eye, ChevronUp, PauseCircle, PlayCircle, Trash2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 
@@ -13,6 +13,7 @@ import useSetupStore    from '../store/setupStore';
 import { usePermissions }    from '../hooks/usePermissions';
 import { useCartSound }      from '../hooks/useCartSound';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
+import { useHeldBills }      from '../hooks/useHeldBills';
 import InvoiceModal       from '../components/InvoiceModal';
 
 import ProductGrid        from '../components/billing/ProductGrid';
@@ -73,6 +74,10 @@ export default function Billing() {
   const [isPrivate,      setIsPrivate]      = useState(false);
   const [showDailyClose, setShowDailyClose] = useState(false);
   const [showMobileCart, setShowMobileCart] = useState(false);
+  const [showHeldBills, setShowHeldBills]   = useState(false);
+
+  // ── Hold / Resume bills ───────────────────────────────────────────────────────
+  const { heldBills, holdBill, resumeBill, deleteBill } = useHeldBills();
 
   // ── Queries ──────────────────────────────────────────────────────────────────
   const { data: productData, isLoading } = useQuery({
@@ -234,6 +239,36 @@ export default function Billing() {
   }, [shopId, productData, addToCart]);
 
   useBarcodeScanner(handleBarcode);
+
+  // ── Hold current bill ─────────────────────────────────────────────────────────
+  const handleHold = useCallback(() => {
+    if (!cart.length) { toast.error('Cart is empty — nothing to hold'); return; }
+    const label = customerSearch
+      ? `${customerSearch.split(' — ')[0]}`
+      : `Bill ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    holdBill(label, { cart, customerId, customerSearch, paymentMethod, notes, discountMode, taxPreset, customTaxVal });
+    setCart([]);
+    setCustomerId('');
+    setCustomerSearch('');
+    setNotes('');
+    toast.success(`"${label}" held — cart cleared`);
+  }, [cart, customerId, customerSearch, paymentMethod, notes, discountMode, taxPreset, customTaxVal, holdBill]);
+
+  // ── Resume a held bill ────────────────────────────────────────────────────────
+  const handleResume = useCallback((id) => {
+    const bill = resumeBill(id);
+    if (!bill) return;
+    setCart(bill.cart || []);
+    setCustomerId(bill.customerId || '');
+    setCustomerSearch(bill.customerSearch || '');
+    setPaymentMethod(bill.paymentMethod || 'cash');
+    setNotes(bill.notes || '');
+    setDiscountMode(bill.discountMode || 'pct');
+    setTaxPreset(bill.taxPreset || 'shop');
+    setCustomTaxVal(bill.customTaxVal || '');
+    setShowHeldBills(false);
+    toast.success(`"${bill.label}" resumed`);
+  }, [resumeBill]);
 
   // ── Totals ───────────────────────────────────────────────────────────────────
   const totals = useMemo(() =>
@@ -407,11 +442,76 @@ export default function Billing() {
                 )}
               </AnimatePresence>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] text-gray-400 font-medium">Discount:</span>
+            <div className="flex items-center gap-2">
+              {/* Hold bill button */}
+              <button
+                type="button"
+                onClick={handleHold}
+                disabled={!cart.length}
+                title="Hold bill"
+                data-testid="hold-bill-btn"
+                className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 disabled:opacity-30 disabled:cursor-not-allowed transition"
+              >
+                <PauseCircle className="w-3.5 h-3.5" />
+                Hold
+              </button>
+              {/* Resume / held bills button */}
+              {heldBills.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowHeldBills((p) => !p)}
+                  className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-semibold text-green-700 bg-green-50 hover:bg-green-100 transition"
+                >
+                  <PlayCircle className="w-3.5 h-3.5" />
+                  {heldBills.length}
+                </button>
+              )}
+              <span className="text-[11px] text-gray-400 font-medium">Disc:</span>
               <DiscountToggle mode={discountMode} onChange={setDiscountMode} />
             </div>
           </div>
+
+          {/* Held bills dropdown */}
+          <AnimatePresence>
+            {showHeldBills && heldBills.length > 0 && (
+              <motion.div
+                key="held"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden border-b border-amber-100 bg-amber-50"
+              >
+                <p className="px-4 py-1.5 text-[10px] font-bold text-amber-600 uppercase tracking-wider">Held Bills</p>
+                <div className="px-2 pb-2 space-y-1">
+                  {heldBills.map((bill) => (
+                    <div key={bill.id} className="flex items-center justify-between px-3 py-2 bg-white rounded-xl border border-amber-100 text-sm">
+                      <div>
+                        <p className="font-semibold text-gray-800 text-xs">{bill.label}</p>
+                        <p className="text-[10px] text-gray-400">{bill.cart?.length || 0} item(s)</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleResume(bill.id)}
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold text-green-700 bg-green-50 hover:bg-green-100 transition"
+                        >
+                          <PlayCircle className="w-3 h-3" />
+                          Resume
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteBill(bill.id)}
+                          className="w-6 h-6 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Cart items — scrollable */}
           <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5 min-h-0 scrollbar-thin">
@@ -490,6 +590,7 @@ export default function Billing() {
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Order notes (optional)…"
+                data-testid="order-notes"
                 className="w-full h-9 text-sm border border-gray-200 rounded-xl px-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all bg-gray-50 focus:bg-white"
               />
 

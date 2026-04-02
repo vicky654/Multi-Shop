@@ -1,9 +1,10 @@
-const mongoose = require('mongoose');
-const Sale     = require('./sale.model');
-const Product  = require('../products/product.model');
-const Customer = require('../customers/customer.model');
-const Shop     = require('../shops/shop.model');
-const cache    = require('../../utils/cache');
+const mongoose      = require('mongoose');
+const Sale          = require('./sale.model');
+const Product       = require('../products/product.model');
+const Customer      = require('../customers/customer.model');
+const Shop          = require('../shops/shop.model');
+const cache         = require('../../utils/cache');
+const ledgerService = require('../customers/creditLedger.service');
 
 // ── Build enriched items from raw cart items ──────────────────────────────────
 const enrichItems = async (items) => {
@@ -20,31 +21,48 @@ const enrichItems = async (items) => {
     if (!product)
       throw Object.assign(new Error(`Product "${item.name || item.productId}" not found`), { status: 400 });
 
-    if (product.stock < item.quantity)
-      throw Object.assign(new Error(`Insufficient stock for "${product.name}"`), { status: 400 });
+    const size  = item.selectedSize  || item.size  || '';
+    const color = item.selectedColor || item.color || '';
+    const qty   = Number(item.quantity);
+
+    // ── Variant-level stock check ──────────────────────────────────────────────
+    if (product.trackVariantStock && (size || color)) {
+      const variant = (product.variantStock || []).find(
+        (v) => v.size === size && v.color === color
+      );
+      if (!variant)
+        throw Object.assign(new Error(`Variant (${size}/${color}) not found for "${product.name}"`), { status: 400 });
+      if (variant.stock < qty)
+        throw Object.assign(new Error(`Insufficient stock for "${product.name}" [${size}/${color}]`), { status: 400 });
+    } else {
+      if (product.stock < qty)
+        throw Object.assign(new Error(`Insufficient stock for "${product.name}"`), { status: 400 });
+    }
 
     const discount        = item.discount || 0;
     const productDiscount = product.discount || 0;
     const effectiveDisc   = Math.max(discount, productDiscount);
     const discountedPrice = product.price * (1 - effectiveDisc / 100);
-    const subtotal        = discountedPrice * item.quantity;
-    const profit          = (discountedPrice - product.costPrice) * item.quantity;
+    const subtotal        = +(discountedPrice * qty).toFixed(2);
+    const profit          = +((discountedPrice - product.costPrice) * qty).toFixed(2);
 
     enrichedItems.push({
       product:       product._id,
       name:          product.name,
       price:         product.price,
       costPrice:     product.costPrice,
-      quantity:      item.quantity,
+      quantity:      qty,
       discount:      effectiveDisc,
       subtotal,
       profit,
-      selectedSize:  item.selectedSize  || item.size  || '',
-      selectedColor: item.selectedColor || item.color || '',
+      selectedSize:  size,
+      selectedColor: color,
+      // Carry variant tracking flag for deductStock
+      _trackVariant: product.trackVariantStock && !!(size || color),
     });
 
     totalAmount   += subtotal;
-    totalDiscount += (product.price - discountedPrice) * item.quantity;
+    totalDiscount += +((product.price - discountedPrice) * qty).toFixed(2);
     totalProfit   += profit;
   }
 
@@ -52,18 +70,36 @@ const enrichItems = async (items) => {
 };
 
 // ── Atomic stock deduction (runs inside a transaction session) ─────────────────
-// Uses a conditional filter `{ stock: { $gte: quantity } }` so MongoDB itself
-// rejects the update if stock dropped between enrichItems validation and now.
 const deductStock = async (enrichedItems, session) => {
-  const result = await Product.bulkWrite(
-    enrichedItems.map((item) => ({
+  const ops = enrichedItems.map((item) => {
+    if (item._trackVariant) {
+      // Decrement the matching variantStock entry atomically
+      return {
+        updateOne: {
+          filter: {
+            _id: item.product,
+            variantStock: {
+              $elemMatch: {
+                size:  item.selectedSize,
+                color: item.selectedColor,
+                stock: { $gte: item.quantity },
+              },
+            },
+          },
+          update: { $inc: { 'variantStock.$.stock': -item.quantity } },
+        },
+      };
+    }
+    // Standard root-level stock deduction
+    return {
       updateOne: {
         filter: { _id: item.product, stock: { $gte: item.quantity } },
         update: { $inc: { stock: -item.quantity } },
       },
-    })),
-    { session, ordered: false }
-  );
+    };
+  });
+
+  const result = await Product.bulkWrite(ops, { session, ordered: false });
 
   if (result.modifiedCount < enrichedItems.length) {
     throw Object.assign(
@@ -75,7 +111,7 @@ const deductStock = async (enrichedItems, session) => {
 
 // ── Admin (staff) sale ────────────────────────────────────────────────────────
 const createSale = async (user, data) => {
-  const { shopId, items, customerId, paymentMethod, notes, taxRate = 0,
+  const { shopId, items, customerId, paymentMethod, payments, notes, taxRate = 0,
           isPrivate = false, dueAmount = 0 } = data;
 
   if (!items?.length) throw Object.assign(new Error('No items in sale'), { status: 400 });
@@ -85,9 +121,22 @@ const createSale = async (user, data) => {
   }
 
   const { enrichedItems, totalAmount, totalDiscount, totalProfit } = await enrichItems(items);
-  const taxAmount  = totalAmount * (taxRate / 100);
-  const finalTotal = totalAmount + taxAmount;
+  const taxAmount  = +(totalAmount * (taxRate / 100)).toFixed(2);
+  const finalTotal = +(totalAmount + taxAmount).toFixed(2);
   const ownerId    = user.role === 'owner' ? user._id : (user.ownerId || user._id);
+
+  // ── Resolve primary payment method (for backward compat) ─────────────────────
+  // When payments[] is supplied, derive paymentMethod from largest tender.
+  let resolvedMethod = paymentMethod || 'cash';
+  let resolvedPayments = [];
+  if (Array.isArray(payments) && payments.length > 0) {
+    resolvedPayments = payments.filter((p) => p.amount > 0);
+    const largest = resolvedPayments.reduce((a, b) => (b.amount > a.amount ? b : a), resolvedPayments[0]);
+    resolvedMethod = largest?.method || 'cash';
+  }
+
+  // Strip internal _trackVariant flag before persisting
+  const saleItems = enrichedItems.map(({ _trackVariant, ...rest }) => rest);
 
   const session = await mongoose.startSession();
   let sale;
@@ -99,13 +148,14 @@ const createSale = async (user, data) => {
 
       // Create sale document inside the same transaction
       [sale] = await Sale.create([{
-        items: enrichedItems,
+        items: saleItems,
         totalAmount: finalTotal,
         totalDiscount,
         totalProfit,
         taxAmount,
         taxRate,
-        paymentMethod: paymentMethod || 'cash',
+        paymentMethod: resolvedMethod,
+        payments:      resolvedPayments,
         customerId:    customerId || null,
         shopId,
         ownerId,
@@ -113,7 +163,7 @@ const createSale = async (user, data) => {
         notes,
         status:     'completed',
         isPrivate:  !!isPrivate,
-        dueAmount:  paymentMethod === 'credit' ? Math.max(0, Number(dueAmount) || 0) : 0,
+        dueAmount:  resolvedMethod === 'credit' ? Math.max(0, Number(dueAmount) || 0) : 0,
       }], { session });
 
       if (customerId) {
@@ -125,6 +175,19 @@ const createSale = async (user, data) => {
           },
           { session }
         );
+      }
+
+      // ── Credit ledger entry ──────────────────────────────────────────────────
+      if (resolvedMethod === 'credit' && customerId) {
+        const creditAmt = resolvedPayments.find((p) => p.method === 'credit')?.amount ?? finalTotal;
+        await ledgerService.recordCredit({
+          customerId,
+          shopId,
+          saleId:     sale._id,
+          amount:     creditAmt,
+          notes:      notes || '',
+          recordedBy: user._id,
+        }, session);
       }
     });
   } finally {
@@ -289,4 +352,75 @@ const refundSale = async (id, user) => {
   return refunded;
 };
 
-module.exports = { createSale, createPublicSale, getSales, getSaleById, refundSale };
+// ── Partial Refund — refund specific line-items (fractional quantities allowed) ─
+const partialRefund = async (id, user, refundItems) => {
+  if (!Array.isArray(refundItems) || refundItems.length === 0)
+    throw Object.assign(new Error('refundItems must be a non-empty array'), { status: 400 });
+
+  const sale = await Sale.findById(id);
+  if (!sale)                      throw Object.assign(new Error('Sale not found'), { status: 404 });
+  if (sale.status === 'refunded') throw Object.assign(new Error('Sale already fully refunded'), { status: 400 });
+  if (user.role !== 'super_admin' && !user.shops.some((s) => s.toString() === sale.shopId.toString()))
+    throw Object.assign(new Error('Access denied'), { status: 403 });
+
+  // Validate refund quantities against remaining quantities
+  const refundMap = Object.fromEntries(
+    refundItems.map((r) => [r.productId?.toString(), Number(r.quantity)])
+  );
+
+  const stockOps = [];
+  let refundAmount = 0;
+
+  for (const item of sale.items) {
+    const pid = item.product?.toString();
+    const refundQty = refundMap[pid] || 0;
+    if (!refundQty) continue;
+
+    const remaining = item.quantity - (item.refundedQty || 0);
+    if (refundQty > remaining)
+      throw Object.assign(
+        new Error(`Cannot refund ${refundQty} of "${item.name}" — only ${remaining} remaining`),
+        { status: 400 }
+      );
+
+    stockOps.push({
+      updateOne: { filter: { _id: item.product }, update: { $inc: { stock: refundQty } } },
+    });
+
+    refundAmount += (item.subtotal / item.quantity) * refundQty;
+    item.refundedQty = (item.refundedQty || 0) + refundQty;
+  }
+
+  if (stockOps.length === 0)
+    throw Object.assign(new Error('No matching items found to refund'), { status: 400 });
+
+  // Check if all quantities are now fully refunded → mark as refunded
+  const allRefunded = sale.items.every(
+    (item) => (item.refundedQty || 0) >= item.quantity
+  );
+
+  const session = await mongoose.startSession();
+  let updated;
+
+  try {
+    await session.withTransaction(async () => {
+      await Product.bulkWrite(stockOps, { session, ordered: false });
+
+      updated = await Sale.findByIdAndUpdate(
+        id,
+        {
+          items:  sale.items,
+          status: allRefunded ? 'refunded' : 'completed',
+        },
+        { new: true, session }
+      );
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  cache.del(`dashboard:${sale.shopId.toString()}`);
+  return { sale: updated, refundAmount: +refundAmount.toFixed(2), fullyRefunded: allRefunded };
+};
+
+module.exports = { createSale, createPublicSale, getSales, getSaleById, refundSale, partialRefund };

@@ -18,6 +18,9 @@ const ProductCard = memo(function ProductCard({ product, inCart, onAdd }) {
       whileTap={outOfStock ? undefined : { scale: 0.97 }}
       onClick={() => !outOfStock && onAdd(product)}
       disabled={outOfStock}
+      data-testid={`product-card-${product._id}`}
+      data-product-name={product.name}
+      data-out-of-stock={outOfStock}
       className={`group relative text-left rounded-2xl overflow-hidden transition-shadow duration-200 ${
         inCart
           ? 'ring-2 ring-blue-500 shadow-lg shadow-blue-100/60 bg-white'
@@ -169,6 +172,7 @@ const ProductGrid = memo(function ProductGrid({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search products, SKU, barcode…"
+          data-testid="product-search"
           className="w-full h-11 pl-11 pr-10 border-2 border-gray-200 rounded-2xl text-sm focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-50 shadow-sm transition-all bg-white"
         />
         <AnimatePresence>

@@ -56,4 +56,17 @@ const simpleReport = asyncHandler(async (req, res) => {
   success(res, data, `Simple report — ${period}`);
 });
 
-module.exports = { dashboard, salesTrend, bestSellers, profitLoss, paymentBreakdown, summary, dailyClosing, simpleReport };
+// GET /reports/category?shopId=...&startDate=...&endDate=...
+const categoryReport = asyncHandler(async (req, res) => {
+  const { shopId, startDate, endDate } = req.query;
+  const data = await reportService.getCategoryReport(req.user, shopId, startDate, endDate, { includePrivate: resolvePrivate(req) });
+  success(res, { categories: data }, 'Category report');
+});
+
+// GET /reports/multi-shop — consolidated view for owners with multiple shops
+const multiShopSummary = asyncHandler(async (req, res) => {
+  const data = await reportService.getMultiShopSummary(req.user);
+  success(res, data, 'Multi-shop summary');
+});
+
+module.exports = { dashboard, salesTrend, bestSellers, profitLoss, paymentBreakdown, summary, dailyClosing, simpleReport, categoryReport, multiShopSummary };

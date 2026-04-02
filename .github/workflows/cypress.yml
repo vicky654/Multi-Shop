@@ -1,0 +1,163 @@
+name: Cypress E2E Tests
+
+# ── Triggers ──────────────────────────────────────────────────────────────────
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  # Allow manual trigger from GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: 'Test suite to run (all / core / advanced)'
+        required: false
+        default: 'all'
+
+# ── Cancel in-flight runs on new push to same branch ─────────────────────────
+concurrency:
+  group: cypress-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cypress:
+    name: Cypress E2E — ${{ matrix.suite }}
+    runs-on: ubuntu-latest
+
+    # ── Run core and advanced suites in parallel ──────────────────────────────
+    strategy:
+      fail-fast: false   # run all matrix jobs even if one fails
+      matrix:
+        suite:
+          - core          # tests 01–05 (billing, split, credit, refund, variant)
+          - advanced      # tests 06–10 (edge cases)
+
+    # ── MongoDB service ───────────────────────────────────────────────────────
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.adminCommand({ping:1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Node.js ───────────────────────────────────────────────────────────
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+
+      # ── 3. Install dependencies ───────────────────────────────────────────────
+      - name: Install server dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Install client + Cypress dependencies
+        working-directory: client
+        run: npm ci
+
+      # ── 4. Cypress binary cache ───────────────────────────────────────────────
+      - name: Cache Cypress binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/Cypress
+          key: cypress-${{ runner.os }}-${{ hashFiles('client/package-lock.json') }}
+          restore-keys: cypress-${{ runner.os }}-
+
+      - name: Verify Cypress installation
+        working-directory: client
+        run: npx cypress verify
+
+      # ── 5. Seed test users (owner + manager accounts) ─────────────────────────
+      - name: Seed test database
+        working-directory: server
+        env:
+          MONGO_URI:  mongodb://localhost:27017/multishop_test
+          JWT_SECRET: ci-test-secret-not-for-prod
+          NODE_ENV:   test
+        run: |
+          # Run seed script if it exists, otherwise skip
+          if [ -f "scripts/seed-test.js" ]; then
+            node scripts/seed-test.js
+          else
+            echo "No seed script found — tests will create their own data"
+          fi
+
+      # ── 6. Start backend ──────────────────────────────────────────────────────
+      - name: Start backend server
+        working-directory: server
+        env:
+          MONGO_URI:  mongodb://localhost:27017/multishop_test
+          JWT_SECRET: ci-test-secret-not-for-prod
+          PORT:       5001
+          NODE_ENV:   test
+        run: npm run dev &
+
+      - name: Wait for backend to be ready
+        run: npx wait-on http://localhost:5001/api/health --timeout 30000
+
+      # ── 7. Start frontend ─────────────────────────────────────────────────────
+      - name: Start frontend (Vite)
+        working-directory: client
+        run: npm run dev &
+
+      - name: Wait for frontend to be ready
+        run: npx wait-on http://localhost:4000 --timeout 30000
+
+      # ── 8. Run Cypress ────────────────────────────────────────────────────────
+      - name: Run Cypress — ${{ matrix.suite }} suite
+        working-directory: client
+        env:
+          CYPRESS_ownerEmail:      ${{ secrets.CYPRESS_OWNER_EMAIL || 'owner@multishop.com' }}
+          CYPRESS_ownerPassword:   ${{ secrets.CYPRESS_OWNER_PASSWORD || 'owner123' }}
+          CYPRESS_apiUrl:          http://localhost:5001/api
+        run: |
+          if [ "${{ matrix.suite }}" = "core" ]; then
+            npx cypress run \
+              --spec 'cypress/e2e/0{1,2,3,4,5}-*.cy.js' \
+              --reporter junit \
+              --reporter-options 'mochaFile=cypress/results/core-[hash].xml'
+          else
+            npx cypress run \
+              --spec 'cypress/e2e/{06,07,08,09,10}-*.cy.js' \
+              --reporter junit \
+              --reporter-options 'mochaFile=cypress/results/advanced-[hash].xml'
+          fi
+
+      # ── 9. Upload artifacts on failure ────────────────────────────────────────
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-screenshots-${{ matrix.suite }}
+          path: client/cypress/screenshots
+          retention-days: 7
+
+      - name: Upload videos on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-videos-${{ matrix.suite }}
+          path: client/cypress/videos
+          retention-days: 7
+
+      # ── 10. Publish JUnit test results ────────────────────────────────────────
+      - name: Publish test results
+        if: always()
+        uses: mikepenz/action-junit-report@v4
+        with:
+          report_paths: 'client/cypress/results/*.xml'
+          check_name:   'Cypress Results — ${{ matrix.suite }}'
+          fail_on_failure: true

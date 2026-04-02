@@ -21,6 +21,7 @@ const CartItem = memo(function CartItem({
       animate={{ opacity: 1, x: 0, scale: 1 }}
       exit={{ opacity: 0, x: 20, scale: 0.95, transition: { duration: 0.15 } }}
       transition={{ type: 'spring', stiffness: 350, damping: 28 }}
+      data-testid={`cart-item-${item.productId}`}
       className="bg-white rounded-2xl border border-gray-100 hover:border-blue-100 transition-colors group"
     >
       {/* Main row */}
@@ -43,6 +44,7 @@ const CartItem = memo(function CartItem({
           <motion.button
             whileTap={{ scale: 0.85 }}
             onClick={onDown}
+            data-testid="qty-decrement"
             className="w-9 h-9 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 flex items-center justify-center transition-colors touch-manipulation"
           >
             <Minus className="w-3.5 h-3.5" />
@@ -59,6 +61,7 @@ const CartItem = memo(function CartItem({
           <motion.button
             whileTap={{ scale: 0.85 }}
             onClick={onUp}
+            data-testid="qty-increment"
             className="w-9 h-9 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center shadow-sm shadow-blue-200 transition-colors touch-manipulation"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -95,6 +98,7 @@ const CartItem = memo(function CartItem({
           <motion.button
             whileTap={{ scale: 0.85 }}
             onClick={onRemove}
+            data-testid="remove-item"
             className="w-7 h-7 rounded-full text-gray-300 hover:text-red-500 hover:bg-red-50 flex items-center justify-center transition-all"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -121,6 +125,7 @@ const CartItem = memo(function CartItem({
                 max={discountMode === 'pct' ? 100 : rawTotal}
                 value={item.discount}
                 onChange={(e) => onDiscount(e.target.value)}
+                data-testid="discount-input"
                 className="flex-1 h-8 text-sm bg-gray-50 border border-gray-200 rounded-lg px-2 focus:outline-none focus:ring-2 focus:ring-emerald-400 tabular-nums text-gray-700 text-center"
                 placeholder="0"
                 autoFocus

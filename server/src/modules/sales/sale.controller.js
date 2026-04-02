@@ -39,10 +39,16 @@ const refund = asyncHandler(async (req, res) => {
   success(res, { sale }, 'Sale refunded');
 });
 
+const partialRefund = asyncHandler(async (req, res) => {
+  logAction(req, LOG_ACTIONS.ORDER_UPDATE, 'sales', `Partial refund on sale ID: ${req.params.id}`);
+  const result = await saleService.partialRefund(req.params.id, req.user, req.body.refundItems);
+  success(res, result, 'Partial refund applied');
+});
+
 // ── Public (online customer checkout) ────────────────────────────────────────
 const publicCheckout = asyncHandler(async (req, res) => {
   const sale = await saleService.createPublicSale(req.body);
   success(res, { sale }, 'Order placed successfully', 201);
 });
 
-module.exports = { create, getAll, getOne, refund, publicCheckout };
+module.exports = { create, getAll, getOne, refund, partialRefund, publicCheckout };

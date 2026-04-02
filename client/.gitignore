@@ -4,3 +4,9 @@ node_modules
 dist
 build
 .env.local
+
+# Cypress — never commit real credentials or test artifacts
+cypress.env.json
+cypress/screenshots
+cypress/videos
+cypress/results

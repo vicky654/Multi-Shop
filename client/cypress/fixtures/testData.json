@@ -1,0 +1,40 @@
+{
+  "users": {
+    "owner": {
+      "email": "owner@multishop.com",
+      "password": "owner123",
+      "name": "Demo Owner"
+    },
+    "manager": {
+      "email": "manager@multishop.com",
+      "password": "manager123",
+      "name": "Demo Manager"
+    }
+  },
+  "products": {
+    "standard": {
+      "name": "Test Rice",
+      "category": "Groceries",
+      "price": 100,
+      "costPrice": 70,
+      "stock": 50
+    },
+    "variant": {
+      "name": "Test T-Shirt",
+      "category": "Clothing",
+      "price": 499,
+      "costPrice": 250,
+      "trackVariantStock": true,
+      "variants": [
+        { "size": "S", "color": "Red",  "stock": 10 },
+        { "size": "M", "color": "Blue", "stock": 5  },
+        { "size": "L", "color": "Red",  "stock": 3  }
+      ]
+    }
+  },
+  "customer": {
+    "name": "Cypress Test Customer",
+    "phone": "9876543210",
+    "email": "cypress@test.com"
+  }
+}

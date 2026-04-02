@@ -297,7 +297,122 @@ const getSimpleReport = async (user, shopId, period = 'today') => {
   };
 };
 
+// ── Category-level Sales Report ───────────────────────────────────────────────
+const getCategoryReport = async (user, shopId, startDate, endDate, { includePrivate = false } = {}) => {
+  const matchFilter = { status: 'completed', ...privateFilter(includePrivate), ...shopFilter(user, shopId) };
+  const range = dateRange(startDate, endDate);
+  if (range) matchFilter.createdAt = range;
+
+  return Sale.aggregate([
+    { $match: matchFilter },
+    { $unwind: '$items' },
+    // Join with Product to get the category
+    {
+      $lookup: {
+        from:         'products',
+        localField:   'items.product',
+        foreignField: '_id',
+        as:           '_product',
+      },
+    },
+    {
+      $addFields: {
+        category: { $ifNull: [{ $first: '$_product.category' }, 'Unknown'] },
+      },
+    },
+    {
+      $group: {
+        _id:          '$category',
+        totalQty:     { $sum: '$items.quantity' },
+        totalRevenue: { $sum: '$items.subtotal' },
+        totalProfit:  { $sum: '$items.profit' },
+        orderCount:   { $addToSet: '$_id' },
+      },
+    },
+    {
+      $project: {
+        _id:          0,
+        category:     '$_id',
+        totalQty:     1,
+        totalRevenue: { $round: ['$totalRevenue', 2] },
+        totalProfit:  { $round: ['$totalProfit', 2] },
+        orderCount:   { $size: '$orderCount' },
+      },
+    },
+    { $sort: { totalRevenue: -1 } },
+  ]);
+};
+
+// ── Multi-Shop Consolidated Dashboard (for owners with multiple shops) ────────
+const getMultiShopSummary = async (user) => {
+  if (user.role !== 'super_admin' && user.role !== 'owner')
+    throw Object.assign(new Error('Access denied'), { status: 403 });
+
+  const shopIds = user.role === 'super_admin'
+    ? null
+    : (user.shops || []).map(toObjectId).filter(Boolean);
+
+  const matchBase = shopIds
+    ? { shopId: { $in: shopIds }, status: 'completed', isPrivate: { $ne: true } }
+    : { status: 'completed', isPrivate: { $ne: true } };
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayMatch = { ...matchBase, createdAt: { $gte: today } };
+
+  const [allTime, todayData, byShop] = await Promise.all([
+    Sale.aggregate([
+      { $match: matchBase },
+      { $group: { _id: null, revenue: { $sum: '$totalAmount' }, profit: { $sum: '$totalProfit' }, count: { $sum: 1 } } },
+    ]),
+    Sale.aggregate([
+      { $match: todayMatch },
+      { $group: { _id: null, revenue: { $sum: '$totalAmount' }, profit: { $sum: '$totalProfit' }, count: { $sum: 1 } } },
+    ]),
+    Sale.aggregate([
+      { $match: matchBase },
+      {
+        $group: {
+          _id:     '$shopId',
+          revenue: { $sum: '$totalAmount' },
+          profit:  { $sum: '$totalProfit' },
+          count:   { $sum: 1 },
+        },
+      },
+      {
+        $lookup: {
+          from:         'shops',
+          localField:   '_id',
+          foreignField: '_id',
+          as:           '_shop',
+        },
+      },
+      {
+        $project: {
+          shopId:   '$_id',
+          name:     { $ifNull: [{ $first: '$_shop.name' }, 'Unknown'] },
+          revenue:  { $round: ['$revenue', 2] },
+          profit:   { $round: ['$profit', 2] },
+          count:    1,
+        },
+      },
+      { $sort: { revenue: -1 } },
+    ]),
+  ]);
+
+  return {
+    totalRevenue:    allTime[0]?.revenue || 0,
+    totalProfit:     allTime[0]?.profit  || 0,
+    totalSalesCount: allTime[0]?.count   || 0,
+    todayRevenue:    todayData[0]?.revenue || 0,
+    todayProfit:     todayData[0]?.profit  || 0,
+    todaySalesCount: todayData[0]?.count   || 0,
+    shops:           byShop,
+  };
+};
+
 module.exports = {
   getDashboardSummary, getSalesTrend, getBestSellers,
   getProfitLoss, getPaymentBreakdown, getDailyClosing, getSimpleReport,
+  getCategoryReport, getMultiShopSummary,
 };

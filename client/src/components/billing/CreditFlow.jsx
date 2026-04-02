@@ -20,6 +20,7 @@ const CreditFlow = memo(function CreditFlow({ grandTotal, dueAmount, onChange })
             value={dueAmount}
             onChange={(e) => onChange(e.target.value)}
             placeholder={`Max ₹${grandTotal.toFixed(0)}`}
+            data-testid="credit-due-input"
             className="w-full h-10 px-3 border-2 border-amber-200 rounded-xl text-sm font-semibold focus:outline-none focus:border-amber-400 bg-white"
           />
         </div>

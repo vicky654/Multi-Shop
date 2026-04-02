@@ -5,6 +5,16 @@ const colorSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// Per-variant stock entry: keyed by size+color combination
+const variantStockSchema = new mongoose.Schema(
+  {
+    size:  { type: String, default: '' },   // '' means "no size"
+    color: { type: String, default: '' },   // color name, '' means "no color"
+    stock: { type: Number, default: 0, min: 0 },
+  },
+  { _id: false }
+);
+
 const productSchema = new mongoose.Schema(
   {
     name:         { type: String, required: true, trim: true },
@@ -13,7 +23,7 @@ const productSchema = new mongoose.Schema(
     price:        { type: Number, required: true, min: 0 },   // selling price
     costPrice:    { type: Number, required: true, min: 0 },   // purchase/cost price
     discount:     { type: Number, default: 0, min: 0, max: 100 }, // % discount
-    stock:        { type: Number, default: 0, min: 0 },
+    stock:        { type: Number, default: 0, min: 0 },   // total / fallback stock
     barcode:      { type: String, trim: true },
     sku:          { type: String, trim: true },
     unit:         { type: String, default: 'pcs' },
@@ -22,6 +32,12 @@ const productSchema = new mongoose.Schema(
     images:       [{ type: String }],                   // multiple images (base64 or URL)
     sizes:        [{ type: String }],                   // e.g. ['S','M','L','XL','XXL']
     colors:       [colorSchema],                        // [{name,hex}]
+    // ── Per-variant stock ──────────────────────────────────────────────────────
+    trackVariantStock: { type: Boolean, default: false },
+    variantStock:      [variantStockSchema],             // populated when trackVariantStock=true
+    // ── Batch / expiry tracking ────────────────────────────────────────────────
+    batchNumber:  { type: String, trim: true },
+    expiryDate:   { type: Date },
     lowStockThreshold: { type: Number, default: 10 },
     shopId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Shop', required: true },
     ownerId:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },

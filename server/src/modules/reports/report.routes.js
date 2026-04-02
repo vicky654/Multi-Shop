@@ -14,5 +14,7 @@ router.get('/profit-loss',       ctrl.profitLoss);
 router.get('/payment-breakdown', ctrl.paymentBreakdown);
 router.get('/daily-closing',     ctrl.dailyClosing);     // ← end-of-day report
 router.get('/simple',            ctrl.simpleReport);     // ← today/week/month quick view
+router.get('/category',          ctrl.categoryReport);   // ← revenue/profit by product category
+router.get('/multi-shop',        ctrl.multiShopSummary); // ← consolidated multi-shop overview
 
 module.exports = router;

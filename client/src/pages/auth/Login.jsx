@@ -47,6 +47,7 @@ export default function Login() {
             <input
               type="email"
               required
+              data-testid="email-input"
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
               placeholder="you@example.com"
@@ -62,6 +63,7 @@ export default function Login() {
             <input
               type={show ? 'text' : 'password'}
               required
+              data-testid="password-input"
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
               placeholder="••••••"
@@ -80,6 +82,7 @@ export default function Login() {
         <button
           type="submit"
           disabled={loading}
+          data-testid="login-button"
           className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-semibold rounded-lg transition flex items-center justify-center gap-2"
         >
           {loading ? <span className="animate-spin w-4 h-4 border-2 border-white/30 border-t-white rounded-full" /> : null}

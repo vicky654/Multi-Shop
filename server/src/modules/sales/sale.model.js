@@ -6,12 +6,22 @@ const saleItemSchema = new mongoose.Schema(
     name:          { type: String, required: true },
     price:         { type: Number, required: true },
     costPrice:     { type: Number, required: true, default: 0 },
-    quantity:      { type: Number, required: true, min: 1 },
+    quantity:      { type: Number, required: true, min: 0.001 },  // fractional support
     discount:      { type: Number, default: 0 },   // % discount on item
     subtotal:      { type: Number, required: true },
     profit:        { type: Number, default: 0 },
     selectedSize:  { type: String, default: '' },  // e.g. 'L'
     selectedColor: { type: String, default: '' },  // e.g. 'Red'
+    refundedQty:   { type: Number, default: 0 },   // partial refund tracking
+  },
+  { _id: false }
+);
+
+// Split payment entry: one row per tender
+const paymentEntrySchema = new mongoose.Schema(
+  {
+    method: { type: String, enum: ['cash', 'card', 'upi', 'credit'], required: true },
+    amount: { type: Number, required: true, min: 0 },
   },
   { _id: false }
 );
@@ -28,6 +38,8 @@ const saleSchema = new mongoose.Schema(
       enum: ['cash', 'card', 'upi', 'credit'],
       default: 'cash',
     },
+    // Split payment — populated when more than one tender is used
+    payments:      [paymentEntrySchema],
     customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', default: null },
     shopId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Shop', required: true },
     ownerId:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },

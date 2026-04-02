@@ -18,6 +18,8 @@ const PaymentSelector = memo(function PaymentSelector({ selected, onChange }) {
           type="button"
           whileTap={{ scale: 0.93 }}
           onClick={() => onChange(key)}
+          data-testid={`payment-${key}`}
+          aria-pressed={selected === key}
           className={`flex flex-col items-center gap-1 py-3 rounded-2xl border-2 font-semibold transition-all duration-150 ${
             selected === key ? active : idle
           }`}

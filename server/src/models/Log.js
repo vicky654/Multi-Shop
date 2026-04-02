@@ -83,6 +83,8 @@ const logSchema = new mongoose.Schema({
 logSchema.index({ userId: 1, createdAt: -1 });
 logSchema.index({ shopId: 1, createdAt: -1 });
 logSchema.index({ action: 1, createdAt: -1 });
+// TTL — MongoDB automatically deletes log documents older than 90 days
+logSchema.index({ createdAt: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 });
 
 module.exports = mongoose.model('Log', logSchema);
 
