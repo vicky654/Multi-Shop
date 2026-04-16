@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ShoppingCart, User, Zap, Calendar, EyeOff, Eye, ChevronUp, PauseCircle, PlayCircle, Trash2 } from 'lucide-react';
+import {
+  ShoppingCart, Search, X, User, Calendar, EyeOff, Eye,
+  PauseCircle, PlayCircle, Trash2, Package, Loader2,
+} from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 
@@ -14,9 +17,12 @@ import { usePermissions }    from '../hooks/usePermissions';
 import { useCartSound }      from '../hooks/useCartSound';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import { useHeldBills }      from '../hooks/useHeldBills';
+import { useNetworkStatus }    from '../hooks/useNetworkStatus';
+import { useSyncEngine }       from '../hooks/useSyncEngine';
+import { addPendingSale, cacheProducts, getCachedProducts } from '../lib/offlineDB';
+import OfflineIndicator        from '../components/OfflineIndicator';
 import InvoiceModal       from '../components/InvoiceModal';
 
-import ProductGrid        from '../components/billing/ProductGrid';
 import CartItem           from '../components/billing/CartItem';
 import DiscountToggle     from '../components/billing/DiscountToggle';
 import CustomerSearch     from '../components/billing/CustomerSearch';
@@ -27,6 +33,8 @@ import TotalSummary       from '../components/billing/TotalSummary';
 import PayButton          from '../components/billing/PayButton';
 import BillingSuggestions from '../components/billing/BillingSuggestions';
 import DailyClosingModal  from '../components/billing/DailyClosingModal';
+import AutoBillSettings   from '../components/billing/AutoBillSettings';
+import useBillingSettingsStore from '../store/billingSettingsStore';
 
 export default function Billing() {
   const qc             = useQueryClient();
@@ -37,23 +45,36 @@ export default function Billing() {
   const beep           = useCartSound();
   const searchRef      = useRef(null);
 
-  // ── Cart state ───────────────────────────────────────────────────────────────
-  const [search,          setSearch]       = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [cart,            setCart]         = useState([]);
+  // ── Fast-billing settings ────────────────────────────────────────────────────
+  const {
+    skipConfirmation,
+    autoPaymentMode,
+    autoAddFirstResult,
+    autoWalkIn,
+    searchDebounceMs,
+  } = useBillingSettingsStore();
 
-  // Debounce search so the product query only fires after 250ms of no typing
+  // ── Cart state ───────────────────────────────────────────────────────────────
+  const [search,          setSearch]          = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [cart,            setCart]            = useState([]);
+
+  // Debounce search — respects user-configured delay (default 200ms)
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search), 250);
+    const t = setTimeout(() => setDebouncedSearch(search), searchDebounceMs);
     return () => clearTimeout(t);
-  }, [search]);
+  }, [search, searchDebounceMs]);
+
+  // ── Dropdown state ───────────────────────────────────────────────────────────
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [activeIdx,    setActiveIdx]    = useState(-1);
 
   const [discountMode, setDiscountMode] = useState('pct');
 
   // ── GST state ────────────────────────────────────────────────────────────────
-  const shopTaxRate                    = activeShop?.taxRate || 0;
-  const [taxPreset,    setTaxPreset]   = useState('shop');
-  const [customTaxVal, setCustomTaxVal]= useState('');
+  const shopTaxRate                     = activeShop?.taxRate || 0;
+  const [taxPreset,    setTaxPreset]    = useState('shop');
+  const [customTaxVal, setCustomTaxVal] = useState('');
 
   const taxRate = taxPreset === 'shop'
     ? shopTaxRate
@@ -65,7 +86,8 @@ export default function Billing() {
   const [customerId,     setCustomerId]     = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
   const [paymentMethod,  setPaymentMethod]  = useState(
-    () => localStorage.getItem('ms_last_payment') || 'cash'
+    // autoPaymentMode from fast-billing settings takes priority; fall back to last saved
+    () => autoPaymentMode || localStorage.getItem('ms_last_payment') || 'cash'
   );
   const [notes,          setNotes]          = useState('');
   const [lastSale,       setLastSale]       = useState(null);
@@ -74,18 +96,41 @@ export default function Billing() {
   const [isPrivate,      setIsPrivate]      = useState(false);
   const [showDailyClose, setShowDailyClose] = useState(false);
   const [showMobileCart, setShowMobileCart] = useState(false);
-  const [showHeldBills, setShowHeldBills]   = useState(false);
+  const [showHeldBills,  setShowHeldBills]  = useState(false);
 
   // ── Hold / Resume bills ───────────────────────────────────────────────────────
   const { heldBills, holdBill, resumeBill, deleteBill } = useHeldBills();
 
+  // ── Offline / sync state ──────────────────────────────────────────────────────
+  const { isOnline } = useNetworkStatus();
+  const { pendingCount, failedCount, isSyncing, lastSyncTime, syncNow, retryFailed, refreshCount } = useSyncEngine();
+
   // ── Queries ──────────────────────────────────────────────────────────────────
   const { data: productData, isLoading } = useQuery({
-    queryKey: ['products-billing', shopId, debouncedSearch],
-    queryFn:  () => productsApi.getAll({ shopId, search: debouncedSearch, limit: 40 }),
-    enabled:  !!shopId,
-    staleTime: 2 * 60 * 1000,  // products unlikely to change mid-session
+    queryKey: ['products-billing', shopId, debouncedSearch, isOnline],
+    queryFn: async () => {
+      if (!isOnline) {
+        const cached = await getCachedProducts(shopId).catch(() => []);
+        const q = debouncedSearch.toLowerCase();
+        const filtered = q
+          ? cached.filter((p) => p.name?.toLowerCase().includes(q) || p.sku?.includes(q))
+          : cached;
+        return { data: filtered };
+      }
+      return productsApi.getAll({ shopId, search: debouncedSearch, limit: 40 });
+    },
+    enabled:   !!shopId,
+    staleTime: isOnline ? 2 * 60 * 1000 : Infinity,
   });
+
+  // Cache products in IndexedDB on full online fetch
+  useEffect(() => {
+    if (!isOnline || !shopId || debouncedSearch) return;
+    const prods = productData?.data;
+    if (Array.isArray(prods) && prods.length > 0) {
+      cacheProducts(shopId, prods).catch(() => {});
+    }
+  }, [isOnline, shopId, productData, debouncedSearch]);
 
   const { data: customerData } = useQuery({
     queryKey: ['customers-billing', shopId],
@@ -196,7 +241,6 @@ export default function Billing() {
     []
   );
 
-  // Add a suggested product — look up in loaded products first, fall back to suggestion data
   const addSuggestedToCart = useCallback((suggestion) => {
     const pid = String(suggestion.productId);
     const found = (productData?.data || []).find((p) => p._id === pid);
@@ -209,22 +253,16 @@ export default function Billing() {
     });
   }, [productData, addToCart, beep]);
 
-  // ── Barcode scanner handler ───────────────────────────────────────────────────
+  // ── Barcode scanner ───────────────────────────────────────────────────────────
   const handleBarcode = useCallback((code) => {
     if (!shopId) return;
-
-    // 1. Check products already loaded in the client cache (zero latency)
     const loaded = productData?.data || [];
-    const match = loaded.find(
-      (p) => p.barcode === code || p.sku === code
-    );
+    const match  = loaded.find((p) => p.barcode === code || p.sku === code);
     if (match) {
       addToCart(match);
       toast.success(`Scanned: ${match.name}`, { duration: 1500 });
       return;
     }
-
-    // 2. Fall back to API search if not in current page results
     productsApi.getAll({ shopId, search: code, limit: 1 }).then((res) => {
       const found = res?.data?.[0];
       if (found && (found.barcode === code || found.sku === code)) {
@@ -233,9 +271,7 @@ export default function Billing() {
       } else {
         toast.error(`No product found for barcode: ${code}`, { duration: 2000 });
       }
-    }).catch(() => {
-      toast.error(`Scan failed for: ${code}`);
-    });
+    }).catch(() => { toast.error(`Scan failed for: ${code}`); });
   }, [shopId, productData, addToCart]);
 
   useBarcodeScanner(handleBarcode);
@@ -254,7 +290,6 @@ export default function Billing() {
     toast.success(`"${label}" held — cart cleared`);
   }, [cart, customerId, customerSearch, paymentMethod, notes, discountMode, taxPreset, customTaxVal, holdBill]);
 
-  // ── Resume a held bill ────────────────────────────────────────────────────────
   const handleResume = useCallback((id) => {
     const bill = resumeBill(id);
     if (!bill) return;
@@ -295,13 +330,15 @@ export default function Billing() {
     if (!can('billing', 'create')) {
       toast.error("You don't have permission to create sales"); return;
     }
+
     const normalizedItems = cart.map((item) => {
       if (discountMode !== 'flat') return item;
       const rawTotal = item.price * item.quantity;
       const discPct  = rawTotal > 0 ? Math.min(100, (item.discount / rawTotal) * 100) : 0;
       return { ...item, discount: +discPct.toFixed(4) };
     });
-    createSaleMut.mutate({
+
+    const payload = {
       shopId,
       items:         normalizedItems,
       customerId:    customerId || undefined,
@@ -309,40 +346,107 @@ export default function Billing() {
       taxRate,
       notes,
       isPrivate,
-      ...(paymentMethod === 'credit' && dueAmount
-        ? { dueAmount: parseFloat(dueAmount) }
-        : {}),
-    });
-  }, [shopId, cart, discountMode, customerId, paymentMethod, taxRate, notes, dueAmount, isPrivate, can]);
+      ...(paymentMethod === 'credit' && dueAmount ? { dueAmount: parseFloat(dueAmount) } : {}),
+    };
 
-  // ── Keyboard shortcuts ────────────────────────────────────────────────────────
+    if (!isOnline) {
+      const offlineId = crypto.randomUUID();
+      addPendingSale({
+        offlineId,
+        ...payload,
+        totalAmount: grandTotal,
+        syncStatus:  'pending',
+        attempts:    0,
+        createdAt:   new Date().toISOString(),
+      })
+        .then(() => {
+          refreshCount();
+          setCart([]);
+          setCustomerId('');
+          setCustomerSearch('');
+          setNotes('');
+          setDueAmount('');
+          setIsPrivate(false);
+          setShowMobileCart(false);
+          toast.success('Sale saved offline — will sync when connected', { duration: 4000, icon: '📴' });
+        })
+        .catch(() => toast.error('Failed to save sale locally — please try again'));
+      return;
+    }
+
+    createSaleMut.mutate(payload);
+  }, [shopId, cart, discountMode, customerId, paymentMethod, taxRate, notes, dueAmount,
+      isPrivate, can, isOnline, grandTotal, refreshCount]);
+
+  // ── Keyboard shortcut: Ctrl+Enter → checkout ─────────────────────────────────
   useEffect(() => {
     const onKey = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
         if (cart.length && !createSaleMut.isPending) handleCheckout();
-        return;
       }
-      if (e.key === 'Escape') { setSearch(''); searchRef.current?.blur(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [cart, createSaleMut.isPending, handleCheckout]);
 
+  // ── Auto-focus on shop select ────────────────────────────────────────────────
   useEffect(() => {
     if (shopId) searchRef.current?.focus();
   }, [shopId]);
 
+  // ── Sync dropdown with search value ─────────────────────────────────────────
+  useEffect(() => {
+    setShowDropdown(!!search);
+    if (!search) setActiveIdx(-1);
+  }, [search]);
+
+  // ── Search input keyboard: Arrow navigation + Enter ──────────────────────────
+  const handleSearchKey = useCallback((e) => {
+    const list = productData?.data || [];
+    if (showDropdown && list.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setActiveIdx((i) => Math.min(i + 1, list.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setActiveIdx((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        // autoAddFirstResult: pick index 0 without requiring arrow-down first
+        const idx = activeIdx >= 0 ? activeIdx : (autoAddFirstResult ? 0 : -1);
+        const p   = idx >= 0 ? list[idx] : null;
+        if (p) {
+          addToCart(p);
+          setSearch('');
+          setShowDropdown(false);
+          setActiveIdx(-1);
+          searchRef.current?.focus();
+        }
+        return;
+      }
+    }
+    if (e.key === 'Escape') {
+      setSearch('');
+      setShowDropdown(false);
+      setActiveIdx(-1);
+      searchRef.current?.blur();
+    }
+  }, [showDropdown, productData, activeIdx, addToCart, autoAddFirstResult]);
+
   const products  = productData?.data || [];
   const customers = customerData?.data || [];
 
-  // O(1) cart lookup — avoids cart.find() for every product card on every render
   const cartMap = useMemo(
     () => new Map(cart.map((i) => [i.productId, i])),
     [cart]
   );
-  const canCreate = can('billing', 'create');
-  const canAddCust= can('customers', 'create');
+  const canCreate  = can('billing', 'create');
+  const canAddCust = can('customers', 'create');
 
   // ── No shop guard ─────────────────────────────────────────────────────────────
   if (!shopId) {
@@ -351,48 +455,132 @@ export default function Billing() {
         <div className="w-20 h-20 rounded-3xl bg-gray-100 flex items-center justify-center mb-5">
           <ShoppingCart className="w-10 h-10 opacity-40" />
         </div>
-        <p className="font-semibold text-gray-500 text-lg">Select a shop to start billing</p>
+        <p className="text-gray-500 text-lg">Select a shop to start billing</p>
         <p className="text-sm text-gray-400 mt-1">Choose your active shop from the top bar</p>
       </div>
     );
   }
 
+  // ── Checkout scrollable — customer, tax, notes (scrolls with cart items) ────
+  const checkoutScrollable = (
+    <div className="space-y-2 px-3 pt-2 pb-1">
+      {/* autoWalkIn skips customer search — anonymous walk-in customer assumed */}
+      {!autoWalkIn && <CustomerSearch
+        customers={customers}
+        customerId={customerId}
+        customerSearch={customerSearch}
+        onChange={(v) => { setCustomerSearch(v); setCustomerId(''); }}
+        onSelect={(c) => {
+          setCustomerId(c._id);
+          setCustomerSearch(`${c.name}${c.phone ? ` — ${c.phone}` : ''}`);
+        }}
+        onDeselect={() => { setCustomerId(''); setCustomerSearch(''); }}
+        canAdd={canAddCust}
+        onQuickAdd={(data, onDone) => {
+          quickAddMut.mutate({ ...data, shopId }, { onSuccess: () => onDone?.() });
+        }}
+        isAdding={quickAddMut.isPending}
+      />}
+
+      <TaxSelector
+        preset={taxPreset}
+        shopTaxRate={shopTaxRate}
+        customVal={customTaxVal}
+        onChange={setTaxPreset}
+        onCustomChange={setCustomTaxVal}
+      />
+
+      <input
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        placeholder="Notes (optional)…"
+        data-testid="order-notes"
+        className="w-full h-8 text-sm border border-gray-200 rounded-lg px-3 focus:outline-none focus:ring-2 focus:ring-blue-300 bg-gray-50 focus:bg-white transition-all"
+      />
+
+      <button
+        type="button"
+        onClick={() => setIsPrivate((p) => !p)}
+        className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border text-xs transition-all ${
+          isPrivate
+            ? 'bg-gray-900 border-gray-700 text-gray-100'
+            : 'bg-gray-50 border-gray-200 text-gray-400 hover:bg-gray-100'
+        }`}
+      >
+        <div className="flex items-center gap-2">
+          {isPrivate ? <EyeOff className="w-3 h-3 text-gray-400" /> : <Eye className="w-3 h-3" />}
+          <span>{isPrivate ? 'Private — hidden from reports' : 'Record in reports'}</span>
+        </div>
+        <div className={`w-7 h-3.5 rounded-full relative transition-colors ${isPrivate ? 'bg-gray-600' : 'bg-gray-300'}`}>
+          <div className={`absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white shadow transition-transform ${isPrivate ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+        </div>
+      </button>
+    </div>
+  );
+
+  // ── Checkout fixed bottom — payment, total, pay (always visible) ─────────────
+  const checkoutFixed = (
+    <div className="shrink-0 border-t border-gray-100 bg-white px-3 py-3 space-y-2.5">
+      <PaymentSelector selected={paymentMethod} onChange={handlePaymentChange} />
+
+      {paymentMethod === 'credit' && (
+        <CreditFlow grandTotal={grandTotal} dueAmount={dueAmount} onChange={setDueAmount} />
+      )}
+
+      <TotalSummary
+        totals={totals}
+        taxRate={taxRate}
+        taxAmount={taxAmount}
+        grandTotal={grandTotal}
+      />
+
+      <PayButton
+        isEmpty={!cart.length}
+        isPending={createSaleMut.isPending}
+        canCreate={canCreate}
+        grandTotal={grandTotal}
+        onClick={handleCheckout}
+      />
+    </div>
+  );
+
   return (
     <>
-      {/*
-        Full-height two-panel POS layout.
-        Negative margins escape the page padding so the panels sit flush.
-        LEFT  = product browser  |  RIGHT = cart + checkout
-      */}
-      <div className="flex h-[calc(100vh-4rem)] -mx-4 -mt-4 sm:-mx-6 lg:-mx-8 overflow-hidden">
+      {/* Offline / sync indicator */}
+      <OfflineIndicator
+        isOnline={isOnline}
+        pendingCount={pendingCount}
+        failedCount={failedCount}
+        isSyncing={isSyncing}
+        lastSyncTime={lastSyncTime}
+        onSyncNow={syncNow}
+        onRetryFailed={retryFailed}
+        shopId={shopId}
+      />
 
-        {/* ══ LEFT — Product browser ══════════════════════════════════════════ */}
-        <div className="flex flex-col flex-1 min-w-0 bg-gray-50 border-r border-gray-200">
+      {/* Full-height two-panel layout */}
+      <div className="flex h-[calc(100vh-4rem)] -mx-4 -mt-4 sm:-mx-6 lg:-mx-8 overflow-hidden bg-[#f6f8fb]">
+
+        {/* ══ LEFT — Search panel ═════════════════════════════════════════════ */}
+        <div className="flex flex-col flex-1 min-w-0">
 
           {/* Top bar */}
-          <div className="shrink-0 flex items-center justify-between px-5 py-3.5 bg-white border-b border-gray-200 shadow-sm">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-md shadow-blue-200">
-                <Zap className="w-4 h-4 text-white" />
-              </div>
-              <div>
-                <h1 className="text-sm font-semibold text-gray-900 leading-tight">POS Billing</h1>
-                <p className="text-[11px] text-gray-400 leading-tight">
-                  {activeShop?.name} &nbsp;·&nbsp;
-                  <kbd className="px-1 bg-gray-100 rounded text-[10px] font-mono">Ctrl+↵</kbd> to checkout
-                </p>
-              </div>
+          <div className="shrink-0 flex items-center justify-between px-5 py-3 bg-white border-b border-gray-100">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-700">POS Billing</span>
+              <span className="text-gray-200 select-none">|</span>
+              <span className="text-sm text-gray-400">{activeShop?.name}</span>
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowDailyClose(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-full text-xs font-semibold transition"
+                className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 text-gray-500 rounded-lg text-xs hover:bg-gray-50 transition"
               >
                 <Calendar className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Close Day</span>
               </button>
               {currentUser && (
-                <div className="flex items-center gap-1.5 text-xs text-gray-500 bg-gray-100 px-3 py-1.5 rounded-full">
+                <div className="flex items-center gap-1.5 text-xs text-gray-400 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
                   <User className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">{currentUser.name}</span>
                 </div>
@@ -400,42 +588,194 @@ export default function Billing() {
             </div>
           </div>
 
-          {/* Scrollable product grid */}
-          <div className="flex-1 overflow-y-auto p-4 scrollbar-thin">
-            <ProductGrid
-              products={products}
-              cartMap={cartMap}
-              isLoading={isLoading}
-              onAdd={addToCart}
-              search={search}
-              setSearch={setSearch}
-              searchRef={searchRef}
-            />
+          {/* Search — pinned, never scrolls */}
+          <div className="shrink-0 px-4 py-3 border-b border-gray-100 bg-[#f6f8fb]">
+            <div className="relative max-w-2xl mx-auto">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+              <input
+                ref={searchRef}
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setActiveIdx(-1); }}
+                onKeyDown={handleSearchKey}
+                onFocus={() => search && setShowDropdown(true)}
+                onBlur={() => setTimeout(() => { setShowDropdown(false); setActiveIdx(-1); }, 150)}
+                placeholder="Search product name, SKU, or barcode…"
+                data-testid="product-search"
+                autoComplete="off"
+                className="w-full h-11 pl-10 pr-9 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all placeholder-gray-300"
+              />
+              {search && (
+                <button
+                  onClick={() => { setSearch(''); setShowDropdown(false); setActiveIdx(-1); searchRef.current?.focus(); }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500 transition"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+
+              {/* Search results dropdown */}
+              <AnimatePresence>
+                {showDropdown && (
+                  <motion.div
+                    key="dropdown"
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: 0.1 }}
+                    className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden"
+                  >
+                    <div className="max-h-72 overflow-y-auto scrollbar-thin">
+                      {isLoading ? (
+                        <div className="flex items-center justify-center py-8 text-gray-400 text-sm gap-2">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Searching…
+                        </div>
+                      ) : products.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-8 text-gray-400 text-sm gap-2">
+                          <Package className="w-7 h-7 opacity-30" />
+                          No products found
+                        </div>
+                      ) : (
+                        products.map((p, i) => {
+                          const fp         = p.price * (1 - (p.discount || 0) / 100);
+                          const outOfStock = p.stock < 1;
+                          const inCart     = cartMap.get(p._id);
+                          return (
+                            <button
+                              key={p._id}
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                if (!outOfStock) {
+                                  addToCart(p);
+                                  setSearch('');
+                                  setShowDropdown(false);
+                                  setActiveIdx(-1);
+                                  searchRef.current?.focus();
+                                }
+                              }}
+                              disabled={outOfStock}
+                              data-testid={`product-result-${p._id}`}
+                              data-product-name={p.name}
+                              className={`w-full flex items-center justify-between px-4 py-2.5 text-left border-b border-gray-50 last:border-0 transition-colors ${
+                                i === activeIdx ? 'bg-blue-50' : 'hover:bg-gray-50'
+                              } ${outOfStock ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm text-gray-800 truncate">{p.name}</p>
+                                <p className="text-xs text-gray-400 mt-0.5">
+                                  {p.category}
+                                  {p.sku ? ` · ${p.sku}` : ''}
+                                  {outOfStock
+                                    ? ' · Out of stock'
+                                    : p.stock <= (p.lowStockThreshold || 5)
+                                    ? ` · Low: ${p.stock}`
+                                    : ` · ${p.stock} in stock`}
+                                </p>
+                              </div>
+                              <div className="shrink-0 ml-4 text-right">
+                                {inCart && (
+                                  <span className="inline-block mb-0.5 text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full border border-blue-100">
+                                    ×{inCart.quantity}
+                                  </span>
+                                )}
+                                <p className="text-sm text-gray-800">₹{fp.toFixed(0)}</p>
+                                {p.discount > 0 && (
+                                  <p className="text-[10px] text-gray-400 line-through">₹{p.price.toFixed(0)}</p>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
 
-          {/* Suggestions strip */}
-          <div className="shrink-0 px-4 border-t border-gray-100 bg-gray-50">
-            <BillingSuggestions cart={cart} shopId={shopId} onAdd={addSuggestedToCart} />
+          {/* Quick items grid — scrollable */}
+          <div className="flex-1 overflow-y-auto min-h-0 px-4 py-3 scrollbar-thin">
+            <div className="max-w-2xl mx-auto flex flex-col gap-4">
+
+              {/* Quick add grid */}
+              {products.length > 0 && (
+                <div>
+                  <p className="text-[11px] text-gray-400 mb-2.5 uppercase tracking-wide">Quick Add</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
+                    {products.slice(0, 20).map((p) => {
+                      const fp         = p.price * (1 - (p.discount || 0) / 100);
+                      const outOfStock = p.stock < 1;
+                      const inCart     = cartMap.get(p._id);
+                      return (
+                        <button
+                          key={p._id}
+                          onClick={() => !outOfStock && addToCart(p)}
+                          disabled={outOfStock}
+                          data-testid={`product-card-${p._id}`}
+                          data-product-name={p.name}
+                          className={`relative flex flex-col items-start gap-1 px-3 py-2.5 rounded-xl border text-left transition-all ${
+                            inCart
+                              ? 'border-blue-300 bg-blue-50'
+                              : outOfStock
+                              ? 'border-gray-100 bg-gray-50 opacity-40 cursor-not-allowed'
+                              : 'border-gray-200 bg-white hover:border-blue-300 hover:bg-blue-50 cursor-pointer'
+                          }`}
+                        >
+                          {inCart && (
+                            <span className="absolute top-1.5 right-1.5 w-4 h-4 bg-blue-600 text-white text-[9px] rounded-full flex items-center justify-center">
+                              {inCart.quantity}
+                            </span>
+                          )}
+                          <p className="text-xs text-gray-700 leading-snug line-clamp-2 pr-4">{p.name}</p>
+                          <p className="text-sm text-gray-900 tabular-nums">₹{fp.toFixed(0)}</p>
+                          {outOfStock && <p className="text-[10px] text-red-400">Out of stock</p>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Empty state */}
+              {products.length === 0 && !isLoading && (
+                <div className="flex flex-col items-center justify-center py-16 text-center select-none">
+                  <Search className="w-8 h-8 mb-3 text-gray-200" />
+                  <p className="text-gray-400 text-sm">Type to search products</p>
+                  <p className="text-xs text-gray-300 mt-1">Or scan a barcode</p>
+                </div>
+              )}
+
+              {/* AI suggestions */}
+              <BillingSuggestions cart={cart} shopId={shopId} onAdd={addSuggestedToCart} />
+
+              {/* Keyboard hints */}
+              <div className="flex items-center gap-4 text-xs text-gray-300 select-none pb-2">
+                <span><kbd className="px-1 py-0.5 bg-white border border-gray-100 rounded font-mono text-[10px]">↑↓</kbd> navigate</span>
+                <span><kbd className="px-1 py-0.5 bg-white border border-gray-100 rounded font-mono text-[10px]">↵</kbd> add</span>
+                <span><kbd className="px-1 py-0.5 bg-white border border-gray-100 rounded font-mono text-[10px]">Ctrl+↵</kbd> checkout</span>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* ══ RIGHT — Cart + Checkout ═════════════════════════════════════════ */}
-        <div className="hidden md:flex w-[360px] xl:w-[400px] shrink-0 flex-col bg-white shadow-2xl shadow-black/5">
+        {/* ══ RIGHT — Cart + Checkout ════════════════════════════════════════ */}
+        <div className="hidden md:flex w-[360px] xl:w-[400px] shrink-0 flex-col bg-white border-l border-gray-100">
 
           {/* Cart header */}
-          <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white">
+          <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-gray-100">
             <div className="flex items-center gap-2">
-              <ShoppingCart className="w-4.5 h-4.5 text-blue-600" />
-              <span className="font-semibold text-gray-900 text-sm">Cart</span>
+              <ShoppingCart className="w-4 h-4 text-gray-400" />
+              <span className="text-sm text-gray-700">Cart</span>
               <AnimatePresence>
                 {cart.length > 0 && (
                   <motion.span
                     key="badge"
-                    initial={{ scale: 0, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    exit={{ scale: 0, opacity: 0 }}
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    exit={{ scale: 0 }}
                     transition={{ type: 'spring', stiffness: 400, damping: 20 }}
-                    className="min-w-[1.4rem] h-5 bg-blue-600 text-white text-[11px] font-black rounded-full flex items-center justify-center px-1.5 shadow-sm"
+                    className="min-w-[1.25rem] h-5 bg-blue-600 text-white text-[10px] rounded-full flex items-center justify-center px-1.5"
                   >
                     {cart.length}
                   </motion.span>
@@ -443,30 +783,27 @@ export default function Billing() {
               </AnimatePresence>
             </div>
             <div className="flex items-center gap-2">
-              {/* Hold bill button */}
               <button
                 type="button"
                 onClick={handleHold}
                 disabled={!cart.length}
                 title="Hold bill"
                 data-testid="hold-bill-btn"
-                className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 disabled:opacity-30 disabled:cursor-not-allowed transition"
+                className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-amber-600 border border-amber-200 hover:bg-amber-50 disabled:opacity-30 disabled:cursor-not-allowed transition"
               >
-                <PauseCircle className="w-3.5 h-3.5" />
+                <PauseCircle className="w-3 h-3" />
                 Hold
               </button>
-              {/* Resume / held bills button */}
               {heldBills.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setShowHeldBills((p) => !p)}
-                  className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-semibold text-green-700 bg-green-50 hover:bg-green-100 transition"
+                  className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-green-600 border border-green-200 hover:bg-green-50 transition"
                 >
-                  <PlayCircle className="w-3.5 h-3.5" />
+                  <PlayCircle className="w-3 h-3" />
                   {heldBills.length}
                 </button>
               )}
-              <span className="text-[11px] text-gray-400 font-medium">Disc:</span>
               <DiscountToggle mode={discountMode} onChange={setDiscountMode} />
             </div>
           </div>
@@ -479,21 +816,21 @@ export default function Billing() {
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
-                className="overflow-hidden border-b border-amber-100 bg-amber-50"
+                className="overflow-hidden border-b border-gray-100"
               >
-                <p className="px-4 py-1.5 text-[10px] font-bold text-amber-600 uppercase tracking-wider">Held Bills</p>
-                <div className="px-2 pb-2 space-y-1">
+                <p className="px-4 py-2 text-[10px] text-gray-400 uppercase tracking-wider">Held Bills</p>
+                <div className="px-3 pb-3 space-y-1">
                   {heldBills.map((bill) => (
-                    <div key={bill.id} className="flex items-center justify-between px-3 py-2 bg-white rounded-xl border border-amber-100 text-sm">
+                    <div key={bill.id} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg border border-gray-100">
                       <div>
-                        <p className="font-semibold text-gray-800 text-xs">{bill.label}</p>
+                        <p className="text-xs text-gray-700">{bill.label}</p>
                         <p className="text-[10px] text-gray-400">{bill.cart?.length || 0} item(s)</p>
                       </div>
                       <div className="flex items-center gap-1">
                         <button
                           type="button"
                           onClick={() => handleResume(bill.id)}
-                          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold text-green-700 bg-green-50 hover:bg-green-100 transition"
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] text-green-600 border border-green-200 hover:bg-green-50 transition"
                         >
                           <PlayCircle className="w-3 h-3" />
                           Resume
@@ -501,7 +838,7 @@ export default function Billing() {
                         <button
                           type="button"
                           onClick={() => deleteBill(bill.id)}
-                          className="w-6 h-6 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
+                          className="w-6 h-6 flex items-center justify-center rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition"
                         >
                           <Trash2 className="w-3 h-3" />
                         </button>
@@ -513,179 +850,23 @@ export default function Billing() {
             )}
           </AnimatePresence>
 
-          {/* Cart items — scrollable */}
-          <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5 min-h-0 scrollbar-thin">
-            <AnimatePresence initial={false}>
-              {cart.length === 0 ? (
-                <motion.div
-                  key="empty"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="flex flex-col items-center justify-center h-44 text-gray-300 select-none"
-                >
-                  <ShoppingCart className="w-12 h-12 mb-3 opacity-30" />
-                  <p className="text-sm font-semibold text-gray-400">Cart is empty</p>
-                  <p className="text-xs text-gray-300 mt-0.5">Click products on the left to add</p>
-                </motion.div>
-              ) : (
-                cart.map((item) => (
-                  <CartItem
-                    key={item.productId}
-                    item={item}
-                    discountMode={discountMode}
-                    canEdit={canCreate}
-                    onUp={() => updateQty(item.productId, 1)}
-                    onDown={() => updateQty(item.productId, -1)}
-                    onDiscount={(v) => updateDiscount(item.productId, v)}
-                    onRemove={() => removeFromCart(item.productId)}
-                    onUpdatePrice={(v) => updatePrice(item.productId, v)}
-                  />
-                ))
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* Checkout panel */}
-          <div className="shrink-0 border-t border-gray-100 overflow-y-auto max-h-[56vh] scrollbar-thin">
-            <div className="px-4 py-3 space-y-3">
-              <CustomerSearch
-                customers={customers}
-                customerId={customerId}
-                customerSearch={customerSearch}
-                onChange={(v) => { setCustomerSearch(v); setCustomerId(''); }}
-                onSelect={(c) => {
-                  setCustomerId(c._id);
-                  setCustomerSearch(`${c.name}${c.phone ? ` — ${c.phone}` : ''}`);
-                }}
-                onDeselect={() => { setCustomerId(''); setCustomerSearch(''); }}
-                canAdd={canAddCust}
-                onQuickAdd={(data, onDone) => {
-                  quickAddMut.mutate({ ...data, shopId }, { onSuccess: () => onDone?.() });
-                }}
-                isAdding={quickAddMut.isPending}
-              />
-
-              <PaymentSelector selected={paymentMethod} onChange={handlePaymentChange} />
-
-              {paymentMethod === 'credit' && (
-                <CreditFlow grandTotal={grandTotal} dueAmount={dueAmount} onChange={setDueAmount} />
-              )}
-
-              <TaxSelector
-                preset={taxPreset}
-                shopTaxRate={shopTaxRate}
-                customVal={customTaxVal}
-                onChange={setTaxPreset}
-                onCustomChange={setCustomTaxVal}
-              />
-
-              <TotalSummary
-                totals={totals}
-                taxRate={taxRate}
-                taxAmount={taxAmount}
-                grandTotal={grandTotal}
-              />
-
-              <input
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Order notes (optional)…"
-                data-testid="order-notes"
-                className="w-full h-9 text-sm border border-gray-200 rounded-xl px-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all bg-gray-50 focus:bg-white"
-              />
-
-              {/* Private sale toggle */}
-              <button
-                type="button"
-                onClick={() => setIsPrivate((p) => !p)}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-xs font-semibold transition-all ${
-                  isPrivate
-                    ? 'bg-gray-900 border-gray-700 text-gray-100'
-                    : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  {isPrivate ? <EyeOff className="w-3.5 h-3.5 text-gray-400" /> : <Eye className="w-3.5 h-3.5" />}
-                  <span>{isPrivate ? 'Private sale — hidden from reports' : 'Record in reports (default)'}</span>
-                </div>
-                <div className={`w-8 h-4 rounded-full relative transition-colors ${isPrivate ? 'bg-gray-600' : 'bg-gray-300'}`}>
-                  <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${isPrivate ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                </div>
-              </button>
-
-              <PayButton
-                isEmpty={!cart.length}
-                isPending={createSaleMut.isPending}
-                canCreate={canCreate}
-                grandTotal={grandTotal}
-                onClick={handleCheckout}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Mobile floating cart button ──────────────────────────────────── */}
-      <AnimatePresence>
-        {cart.length > 0 && (
-          <motion.div
-            className="fixed bottom-4 right-4 md:hidden z-40"
-            initial={{ scale: 0, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-          >
-            <button
-              onClick={() => setShowMobileCart(true)}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-2xl shadow-xl shadow-blue-500/40 font-bold text-sm"
-            >
-              <ShoppingCart className="w-4.5 h-4.5" />
-              {cart.length} · ₹{Math.round(grandTotal).toLocaleString('en-IN')}
-              <ChevronUp className="w-4 h-4 opacity-70" />
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Mobile cart bottom sheet ─────────────────────────────────────── */}
-      <AnimatePresence>
-        {showMobileCart && (
-          <motion.div
-            className="fixed inset-0 z-50 md:hidden"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <div
-              className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-              onClick={() => setShowMobileCart(false)}
-            />
-            <motion.div
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 30, stiffness: 350 }}
-              className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl flex flex-col"
-              style={{ maxHeight: '92vh' }}
-            >
-              {/* Handle bar */}
-              <div className="flex justify-center pt-3 pb-1 shrink-0">
-                <div className="w-10 h-1 rounded-full bg-gray-300" />
-              </div>
-
-              {/* Mobile cart header */}
-              <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 shrink-0">
-                <div className="flex items-center gap-2 font-semibold text-gray-900">
-                  <ShoppingCart className="w-4 h-4 text-blue-600" />
-                  Cart ({cart.length})
-                </div>
-                <DiscountToggle mode={discountMode} onChange={setDiscountMode} />
-              </div>
-
-              {/* Mobile cart items */}
-              <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5 min-h-0">
-                <AnimatePresence initial={false}>
-                  {cart.map((item) => (
+          {/* Cart items + customer/tax/notes — scrollable middle zone */}
+          <div className="flex-1 overflow-y-auto min-h-0 scrollbar-thin">
+            <div className="px-3 py-2 space-y-1.5">
+              <AnimatePresence initial={false}>
+                {cart.length === 0 ? (
+                  <motion.div
+                    key="empty"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="flex flex-col items-center justify-center h-36 text-gray-300 select-none"
+                  >
+                    <ShoppingCart className="w-9 h-9 mb-2.5 opacity-20" />
+                    <p className="text-sm text-gray-400">Cart is empty</p>
+                    <p className="text-xs text-gray-300 mt-0.5">Search and add products on the left</p>
+                  </motion.div>
+                ) : (
+                  cart.map((item) => (
                     <CartItem
                       key={item.productId}
                       item={item}
@@ -697,76 +878,107 @@ export default function Billing() {
                       onRemove={() => removeFromCart(item.productId)}
                       onUpdatePrice={(v) => updatePrice(item.productId, v)}
                     />
-                  ))}
-                </AnimatePresence>
+                  ))
+                )}
+              </AnimatePresence>
+            </div>
+            {/* Customer, tax, notes, private — scroll with cart */}
+            {checkoutScrollable}
+
+            {/* Fast-billing settings — collapsible, bottom of scroll zone */}
+            <div className="px-3 pb-3">
+              <AutoBillSettings />
+            </div>
+          </div>
+
+          {/* Payment + Total + Pay — always visible at bottom */}
+          {checkoutFixed}
+        </div>
+      </div>
+
+      {/* ── Mobile floating cart button ──────────────────────────────────────── */}
+      <AnimatePresence>
+        {cart.length > 0 && (
+          <motion.div
+            className="fixed bottom-4 right-4 md:hidden z-40"
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+          >
+            <button
+              onClick={() => setShowMobileCart(true)}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-2xl shadow-lg text-sm"
+            >
+              <ShoppingCart className="w-4 h-4" />
+              {cart.length} · ₹{Math.round(grandTotal).toLocaleString('en-IN')}
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Mobile cart bottom sheet ─────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showMobileCart && (
+          <motion.div
+            className="fixed inset-0 z-50 md:hidden"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <div className="absolute inset-0 bg-black/40" onClick={() => setShowMobileCart(false)} />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 30, stiffness: 350 }}
+              className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl flex flex-col"
+              style={{ maxHeight: '92vh' }}
+            >
+              {/* Handle */}
+              <div className="flex justify-center pt-3 pb-1 shrink-0">
+                <div className="w-8 h-1 rounded-full bg-gray-200" />
               </div>
 
-              {/* Mobile checkout panel */}
-              <div className="shrink-0 border-t border-gray-100 px-4 py-3 space-y-3 overflow-y-auto" style={{ maxHeight: '55vh' }}>
-                <CustomerSearch
-                  customers={customers}
-                  customerId={customerId}
-                  customerSearch={customerSearch}
-                  onChange={(v) => { setCustomerSearch(v); setCustomerId(''); }}
-                  onSelect={(c) => {
-                    setCustomerId(c._id);
-                    setCustomerSearch(`${c.name}${c.phone ? ` — ${c.phone}` : ''}`);
-                  }}
-                  onDeselect={() => { setCustomerId(''); setCustomerSearch(''); }}
-                  canAdd={canAddCust}
-                  onQuickAdd={(data, onDone) => {
-                    quickAddMut.mutate({ ...data, shopId }, { onSuccess: () => onDone?.() });
-                  }}
-                  isAdding={quickAddMut.isPending}
-                />
-                <PaymentSelector selected={paymentMethod} onChange={handlePaymentChange} />
-                {paymentMethod === 'credit' && (
-                  <CreditFlow grandTotal={grandTotal} dueAmount={dueAmount} onChange={setDueAmount} />
-                )}
-                <TaxSelector
-                  preset={taxPreset}
-                  shopTaxRate={shopTaxRate}
-                  customVal={customTaxVal}
-                  onChange={setTaxPreset}
-                  onCustomChange={setCustomTaxVal}
-                />
-                <TotalSummary totals={totals} taxRate={taxRate} taxAmount={taxAmount} grandTotal={grandTotal} />
-                <input
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Order notes (optional)…"
-                  className="w-full h-9 text-sm border border-gray-200 rounded-xl px-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all bg-gray-50 focus:bg-white"
-                />
-                <button
-                  type="button"
-                  onClick={() => setIsPrivate((p) => !p)}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-xs font-semibold transition-all ${
-                    isPrivate
-                      ? 'bg-gray-900 border-gray-700 text-gray-100'
-                      : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    {isPrivate ? <EyeOff className="w-3.5 h-3.5 text-gray-400" /> : <Eye className="w-3.5 h-3.5" />}
-                    <span>{isPrivate ? 'Private — hidden from reports' : 'Record in reports'}</span>
-                  </div>
-                  <div className={`w-8 h-4 rounded-full relative transition-colors ${isPrivate ? 'bg-gray-600' : 'bg-gray-300'}`}>
-                    <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${isPrivate ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                  </div>
-                </button>
-                <PayButton
-                  isEmpty={!cart.length}
-                  isPending={createSaleMut.isPending}
-                  canCreate={canCreate}
-                  grandTotal={grandTotal}
-                  onClick={handleCheckout}
-                />
+              {/* Mobile cart header */}
+              <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 shrink-0">
+                <div className="flex items-center gap-2 text-sm text-gray-700">
+                  <ShoppingCart className="w-4 h-4 text-blue-500" />
+                  Cart ({cart.length})
+                </div>
+                <DiscountToggle mode={discountMode} onChange={setDiscountMode} />
               </div>
+
+              {/* Mobile — cart items + customer/tax/notes — scrollable */}
+              <div className="flex-1 overflow-y-auto min-h-0">
+                <div className="px-3 py-2 space-y-1.5">
+                  <AnimatePresence initial={false}>
+                    {cart.map((item) => (
+                      <CartItem
+                        key={item.productId}
+                        item={item}
+                        discountMode={discountMode}
+                        canEdit={canCreate}
+                        onUp={() => updateQty(item.productId, 1)}
+                        onDown={() => updateQty(item.productId, -1)}
+                        onDiscount={(v) => updateDiscount(item.productId, v)}
+                        onRemove={() => removeFromCart(item.productId)}
+                        onUpdatePrice={(v) => updatePrice(item.productId, v)}
+                      />
+                    ))}
+                  </AnimatePresence>
+                </div>
+                {checkoutScrollable}
+              </div>
+
+              {/* Mobile — payment + total + pay — fixed at bottom */}
+              {checkoutFixed}
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
+      {/* Modals */}
       {showInvoice && lastSale && (
         <InvoiceModal sale={lastSale} onClose={() => setShowInvoice(false)} />
       )}

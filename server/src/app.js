@@ -8,6 +8,7 @@ const sanitize                   = require('./middlewares/sanitize.middleware');
 const authRoutes          = require('./modules/auth/auth.routes');
 const shopRoutes          = require('./modules/shops/shop.routes');
 const productRoutes       = require('./modules/products/product.routes');
+const inventoryRoutes     = require('./modules/inventory/inventory.routes');
 const saleRoutes          = require('./modules/sales/sale.routes');
 const customerRoutes      = require('./modules/customers/customer.routes');
 const expenseRoutes       = require('./modules/expenses/expense.routes');
@@ -85,6 +86,7 @@ app.use('/api/logs',          logsRoutes);
 app.use('/api/alerts',        alertRoutes);
 app.use('/api/parser',        parserRoutes);
 app.use('/api/insights',      insightsRoutes);
+app.use('/api/inventory',     inventoryRoutes);
 app.use('/api/credit-ledger', creditLedgerRoutes);
 
 scheduler.start();

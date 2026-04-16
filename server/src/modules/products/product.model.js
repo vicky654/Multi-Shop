@@ -39,6 +39,15 @@ const productSchema = new mongoose.Schema(
     batchNumber:  { type: String, trim: true },
     expiryDate:   { type: Date },
     lowStockThreshold: { type: Number, default: 10 },
+
+    // ── ERP phase fields ───────────────────────────────────────────────────────
+    hsnCode:       { type: String, trim: true },               // GST compliance
+    taxType:       { type: String, enum: ['taxable', 'exempt', 'nil_rated', 'zero_rated'], default: 'taxable' },
+    trackBatch:    { type: Boolean, default: false },          // enable batch tracking
+    trackExpiry:   { type: Boolean, default: false },          // enable expiry tracking
+    reorderPoint:  { type: Number, default: 0 },               // auto-reorder trigger
+    minStock:      { type: Number, default: 0 },
+    maxStock:      { type: Number, default: 0 },
     shopId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Shop', required: true },
     ownerId:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     isActive:     { type: Boolean, default: true },
@@ -87,8 +96,11 @@ productSchema.index({ subCategory: 1, shopId: 1 });
 productSchema.index({ isFeatured: 1, shopId: 1 });
 productSchema.index({ isTrending: 1, shopId: 1 });
 productSchema.index({ isNewArrival: 1, shopId: 1 });
-productSchema.index({ name: 'text', category: 'text', description: 'text' });
+productSchema.index({ name: 'text', category: 'text', description: 'text', sku: 'text', barcode: 'text' });
 // Low-stock queries: { isActive:1, stock:1, shopId:1 } — used by alerts & insights
 productSchema.index({ shopId: 1, isActive: 1, stock: 1 });
+// ERP phase: sorting by most-recently modified, fast pagination
+productSchema.index({ shopId: 1, updatedAt: -1 });
+productSchema.index({ shopId: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Product', productSchema);

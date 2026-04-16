@@ -5,9 +5,12 @@ const Customer      = require('../customers/customer.model');
 const Shop          = require('../shops/shop.model');
 const cache         = require('../../utils/cache');
 const ledgerService = require('../customers/creditLedger.service');
+const stockService  = require('../inventory/stock.service');
 
 // ── Build enriched items from raw cart items ──────────────────────────────────
-const enrichItems = async (items) => {
+// preservePrice: when true (offline-synced sales), use item.price if set so
+// the sale is recorded at the price the customer was shown, not the current DB price.
+const enrichItems = async (items, { preservePrice = false } = {}) => {
   let totalAmount = 0, totalDiscount = 0, totalProfit = 0;
   const enrichedItems = [];
 
@@ -42,7 +45,10 @@ const enrichItems = async (items) => {
     const discount        = item.discount || 0;
     const productDiscount = product.discount || 0;
     const effectiveDisc   = Math.max(discount, productDiscount);
-    const discountedPrice = product.price * (1 - effectiveDisc / 100);
+    // Offline sales preserve the price shown to the customer at the time of sale.
+    // Online sales always use the current DB price.
+    const basePrice       = preservePrice && item.price > 0 ? item.price : product.price;
+    const discountedPrice = basePrice * (1 - effectiveDisc / 100);
     const subtotal        = +(discountedPrice * qty).toFixed(2);
     const profit          = +((discountedPrice - product.costPrice) * qty).toFixed(2);
 
@@ -112,7 +118,7 @@ const deductStock = async (enrichedItems, session) => {
 // ── Admin (staff) sale ────────────────────────────────────────────────────────
 const createSale = async (user, data) => {
   const { shopId, items, customerId, paymentMethod, payments, notes, taxRate = 0,
-          isPrivate = false, dueAmount = 0 } = data;
+          isPrivate = false, dueAmount = 0, offlineId } = data;
 
   if (!items?.length) throw Object.assign(new Error('No items in sale'), { status: 400 });
 
@@ -120,7 +126,21 @@ const createSale = async (user, data) => {
     throw Object.assign(new Error('No access to this shop'), { status: 403 });
   }
 
-  const { enrichedItems, totalAmount, totalDiscount, totalProfit } = await enrichItems(items);
+  // ── Idempotency check for offline-synced sales ──────────────────────────────
+  // If this sale was created offline (has an offlineId), check whether we've
+  // already processed it. This prevents duplicate records if the device retries
+  // a sync after a network hiccup mid-request.
+  if (offlineId) {
+    const existing = await Sale.findOne({ offlineId })
+      .populate(['customerId', 'staffId', { path: 'shopId', select: 'name address phone currency taxRate logo' }])
+      .lean();
+    if (existing) return existing; // already synced — return the stored sale
+  }
+
+  const { enrichedItems, totalAmount, totalDiscount, totalProfit } = await enrichItems(
+    items,
+    { preservePrice: !!offlineId } // honour original sale price for offline-synced sales
+  );
   const taxAmount  = +(totalAmount * (taxRate / 100)).toFixed(2);
   const finalTotal = +(totalAmount + taxAmount).toFixed(2);
   const ownerId    = user.role === 'owner' ? user._id : (user.ownerId || user._id);
@@ -164,6 +184,8 @@ const createSale = async (user, data) => {
         status:     'completed',
         isPrivate:  !!isPrivate,
         dueAmount:  resolvedMethod === 'credit' ? Math.max(0, Number(dueAmount) || 0) : 0,
+        // Persist the client-side UUID so we can detect duplicate sync retries
+        ...(offlineId ? { offlineId } : {}),
       }], { session });
 
       if (customerId) {
@@ -196,6 +218,13 @@ const createSale = async (user, data) => {
 
   // Bust dashboard cache so next load sees fresh totals
   cache.del(`dashboard:${shopId}`);
+
+  // ── Update StockSnapshot (fire-and-forget, non-blocking) ─────────────────────
+  // The authoritative stock guard is `deductStock` inside the transaction.
+  // Snapshot is best-effort for fast reads — failure here never blocks the sale.
+  stockService.bulkUpdateFromSale({ items: sale.items, shopId }).catch((err) => {
+    console.error('[StockSnapshot] bulkUpdateFromSale failed:', err.message);
+  });
 
   await sale.populate(['customerId', 'staffId', { path: 'shopId', select: 'name address phone currency taxRate logo' }]);
   return sale;
@@ -349,6 +378,12 @@ const refundSale = async (id, user) => {
   }
 
   cache.del(`dashboard:${sale.shopId.toString()}`);
+
+  // ── Update StockSnapshot — restore stock (fire-and-forget) ───────────────────
+  stockService.bulkUpdateFromRefund({ items: sale.items, shopId: sale.shopId.toString() }).catch((err) => {
+    console.error('[StockSnapshot] bulkUpdateFromRefund failed:', err.message);
+  });
+
   return refunded;
 };
 
@@ -423,4 +458,47 @@ const partialRefund = async (id, user, refundItems) => {
   return { sale: updated, refundAmount: +refundAmount.toFixed(2), fullyRefunded: allRefunded };
 };
 
-module.exports = { createSale, createPublicSale, getSales, getSaleById, refundSale, partialRefund };
+// ── Bulk sync — processes offline sales sequentially (FIFO) ──────────────────
+// Accepts an array of sale payloads, each carrying an offlineId.
+// Returns a per-item result array so the client can update each record
+// individually even when some succeed and others fail.
+const bulkSyncSales = async (user, salesArray) => {
+  if (!Array.isArray(salesArray) || salesArray.length === 0)
+    throw Object.assign(new Error('sales array is required'), { status: 400 });
+
+  if (salesArray.length > 50)
+    throw Object.assign(new Error('Maximum 50 sales per bulk sync'), { status: 400 });
+
+  const results = [];
+
+  // Process in the order received — frontend already sorts by createdAt ASC (FIFO)
+  for (const saleData of salesArray) {
+    const { offlineId } = saleData;
+
+    if (!offlineId) {
+      results.push({ offlineId: null, success: false, error: 'Missing offlineId' });
+      continue;
+    }
+
+    try {
+      const sale = await createSale(user, saleData);
+      results.push({
+        offlineId,
+        success:       true,
+        saleId:        sale._id,
+        invoiceNumber: sale.invoiceNumber,
+      });
+    } catch (err) {
+      results.push({
+        offlineId,
+        success: false,
+        error:   err.message || 'Unknown error',
+        status:  err.status  || 500,
+      });
+    }
+  }
+
+  return results;
+};
+
+module.exports = { createSale, createPublicSale, getSales, getSaleById, refundSale, partialRefund, bulkSyncSales };
