@@ -45,10 +45,26 @@ const partialRefund = asyncHandler(async (req, res) => {
   success(res, result, 'Partial refund applied');
 });
 
+// ── Bulk sync (offline → online) ──────────────────────────────────────────────
+// Accepts { sales: [...] } — processes sequentially, returns per-item results.
+// Designed to be idempotent: each item carries an offlineId that prevents
+// double-processing even if the request is retried.
+const bulkSync = asyncHandler(async (req, res) => {
+  const { sales } = req.body;
+  logAction(req, LOG_ACTIONS.ORDER_CREATE, 'sales', `Bulk sync: ${sales?.length || 0} offline sales`);
+
+  const results = await saleService.bulkSyncSales(req.user, sales);
+
+  const synced = results.filter((r) => r.success).length;
+  const failed = results.filter((r) => !r.success).length;
+
+  success(res, { results, total: sales.length, synced, failed }, 'Bulk sync complete');
+});
+
 // ── Public (online customer checkout) ────────────────────────────────────────
 const publicCheckout = asyncHandler(async (req, res) => {
   const sale = await saleService.createPublicSale(req.body);
   success(res, { sale }, 'Order placed successfully', 201);
 });
 
-module.exports = { create, getAll, getOne, refund, partialRefund, publicCheckout };
+module.exports = { create, getAll, getOne, refund, partialRefund, publicCheckout, bulkSync };

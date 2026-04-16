@@ -1,10 +1,16 @@
 import api from './axios';
 
 export const salesApi = {
-  getAll:  (params) => api.get('/sales', { params }),
-  getOne:  (id)     => api.get(`/sales/${id}`),
-  create:  (data)   => api.post('/sales', data),
-  refund:  (id)     => api.patch(`/sales/${id}/refund`),
+  getAll:   (params) => api.get('/sales', { params }),
+  getOne:   (id)     => api.get(`/sales/${id}`),
+  create:   (data)   => api.post('/sales', data),
+  refund:   (id)     => api.patch(`/sales/${id}/refund`),
+  /**
+   * Bulk-sync offline sales.
+   * @param {Array} sales — array of sale payloads, each with offlineId
+   * @returns { results: [{offlineId, success, saleId?, error?}], synced, failed }
+   */
+  bulkSync: (sales)  => api.post('/sales/bulk-sync', { sales }),
 };
 
 // Reports helpers used in billing / daily-closing

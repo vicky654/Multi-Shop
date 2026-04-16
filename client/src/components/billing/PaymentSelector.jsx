@@ -1,32 +1,32 @@
 import { memo } from 'react';
 import { Banknote, CreditCard, Smartphone, Clock } from 'lucide-react';
-import { motion } from 'framer-motion';
 
 const METHODS = [
-  { key: 'cash',   label: 'Cash',   icon: Banknote,   active: 'bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-200/60', idle: 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:border-emerald-400' },
-  { key: 'card',   label: 'Card',   icon: CreditCard, active: 'bg-violet-600 border-violet-600 text-white shadow-lg shadow-violet-200/60',   idle: 'bg-violet-50 border-violet-200 text-violet-700 hover:border-violet-400'   },
-  { key: 'upi',    label: 'UPI',    icon: Smartphone, active: 'bg-orange-500 border-orange-500 text-white shadow-lg shadow-orange-200/60',   idle: 'bg-orange-50 border-orange-200 text-orange-700 hover:border-orange-400'   },
-  { key: 'credit', label: 'Credit', icon: Clock,       active: 'bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-200/60',     idle: 'bg-amber-50 border-amber-200 text-amber-700 hover:border-amber-400'       },
+  { key: 'cash',   label: 'Cash',   icon: Banknote   },
+  { key: 'card',   label: 'Card',   icon: CreditCard },
+  { key: 'upi',    label: 'UPI',    icon: Smartphone },
+  { key: 'credit', label: 'Credit', icon: Clock      },
 ];
 
 const PaymentSelector = memo(function PaymentSelector({ selected, onChange }) {
   return (
     <div className="grid grid-cols-4 gap-1.5">
-      {METHODS.map(({ key, label, icon: Icon, active, idle }) => (
-        <motion.button
+      {METHODS.map(({ key, label, icon: Icon }) => (
+        <button
           key={key}
           type="button"
-          whileTap={{ scale: 0.93 }}
           onClick={() => onChange(key)}
           data-testid={`payment-${key}`}
           aria-pressed={selected === key}
-          className={`flex flex-col items-center gap-1 py-3 rounded-2xl border-2 font-semibold transition-all duration-150 ${
-            selected === key ? active : idle
+          className={`flex flex-col items-center gap-1.5 py-2.5 rounded-xl border text-xs transition-all ${
+            selected === key
+              ? 'border-blue-500 bg-blue-50 text-blue-600'
+              : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:bg-gray-50'
           }`}
         >
-          <Icon className="w-4.5 h-4.5" style={{ width: '1.1rem', height: '1.1rem' }} />
-          <span className="text-[11px] leading-none">{label}</span>
-        </motion.button>
+          <Icon className="w-4 h-4" />
+          <span>{label}</span>
+        </button>
       ))}
     </div>
   );

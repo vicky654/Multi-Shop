@@ -50,30 +50,34 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // Network-first for API calls
         runtimeCaching: [
+          // API: NetworkFirst — use cache when offline (stale data is better than nothing)
           {
             urlPattern: /^https?:\/\/.*\/api\//,
             handler: 'NetworkFirst',
             options: {
-              cacheName: 'api-cache',
-              expiration: { maxEntries: 50, maxAgeSeconds: 300 },
-              networkTimeoutSeconds: 10,
+              cacheName:            'api-cache',
+              expiration:           { maxEntries: 100, maxAgeSeconds: 60 * 60 }, // 1hr
+              networkTimeoutSeconds: 8,
+              // On failure (offline), fall back to cached response
+              fetchOptions: { credentials: 'include' },
             },
           },
+          // Images: CacheFirst — long-lived, rarely change
           {
             urlPattern: /\.(png|jpg|jpeg|svg|gif|webp|ico)$/,
             handler: 'CacheFirst',
             options: {
-              cacheName: 'image-cache',
+              cacheName:  'image-cache',
               expiration: { maxEntries: 60, maxAgeSeconds: 30 * 24 * 60 * 60 },
             },
           },
         ],
-        skipWaiting: true,
+        skipWaiting:  true,
         clientsClaim: true,
-        // Don't cache login/register pages to avoid auth issues
-        navigateFallbackDenylist: [/^\/api/, /^\/shop/],
+        // Allow SPA navigation to /billing, /dashboard, /orders while offline
+        navigateFallback:       '/index.html',
+        navigateFallbackDenylist: [/^\/api/, /^\/sw\.js/],
       },
       devOptions: {
         enabled: false, // disable in dev to avoid noise

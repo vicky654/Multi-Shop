@@ -57,6 +57,11 @@ const saleSchema = new mongoose.Schema(
     isPrivate:     { type: Boolean, default: false },
     // ── Credit sales — amount still owed by customer ───────────────────────
     dueAmount:     { type: Number, default: 0 },
+
+    // ── Offline sync — UUID generated on the client when billing offline ────
+    // sparse: true means the unique constraint only applies to non-null values,
+    // so regular (online) sales without an offlineId don't conflict.
+    offlineId: { type: String, default: null },
   },
   { timestamps: true }
 );
@@ -78,5 +83,8 @@ saleSchema.index({ status: 1, shopId: 1 });
 saleSchema.index({ shopId: 1, status: 1, createdAt: -1 });
 // For online order listing filtered by shop
 saleSchema.index({ shopId: 1, isOnlineOrder: 1, createdAt: -1 });
+// Sparse unique index — ensures no duplicate offline syncs while allowing
+// regular sales to have offlineId = null without conflicting
+saleSchema.index({ offlineId: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('Sale', saleSchema);
