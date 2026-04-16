@@ -28,6 +28,7 @@ const AdminConsole    = lazy(() => import('../pages/AdminConsole'));
 const SystemTest  = lazy(() => import('../pages/SystemTest'));
 const Logs        = lazy(() => import('../pages/Logs'));
 const Orders      = lazy(() => import('../pages/Orders'));
+const Automations = lazy(() => import('../pages/Automations'));
 
 // ── Customer shop pages (separate bundle) ─────────────────────────────────────
 const ShopLayout        = lazy(() => import('../pages/shop/ShopLayout'));
@@ -105,6 +106,7 @@ export default function AppRoutes() {
             <Route path="/admin/console"   element={<AdminConsole />} />
             <Route path="/system-test"  element={<SystemTest />} />
             <Route path="/logs"         element={<Logs />} />
+            <Route path="/automations" element={<Automations />} />
           </Route>
         </Route>
 

@@ -28,6 +28,7 @@ const alertRoutes         = require('./modules/alerts/alert.routes');
 const parserRoutes        = require('./modules/parser/parser.routes');
 const insightsRoutes      = require('./modules/insights/insights.routes');
 const creditLedgerRoutes  = require('./modules/customers/creditLedger.routes');
+const erpAutomationRoutes = require('./modules/erp-automation/erp-automation.routes');
 
 const app = express();
 
@@ -87,7 +88,8 @@ app.use('/api/alerts',        alertRoutes);
 app.use('/api/parser',        parserRoutes);
 app.use('/api/insights',      insightsRoutes);
 app.use('/api/inventory',     inventoryRoutes);
-app.use('/api/credit-ledger', creditLedgerRoutes);
+app.use('/api/credit-ledger',    creditLedgerRoutes);
+app.use('/api/erp-automations', erpAutomationRoutes);
 
 scheduler.start();
 

@@ -1,5 +1,6 @@
 const { processScheduledCampaigns } = require('./campaign.service');
 const { runScheduledAutomations }   = require('./automation.service');
+const { runErpAutomations }         = require('../erp-automation/erp-automation.service');
 
 const start = () => {
   // Process scheduled campaigns every 2 minutes
@@ -8,19 +9,26 @@ const start = () => {
     2 * 60 * 1000
   );
 
-  // Run automation rules every 30 minutes
+  // Run campaign automation rules every 30 minutes
   setInterval(
     () => runScheduledAutomations().catch((e) => console.error('[Scheduler] automation error:', e.message)),
     30 * 60 * 1000
   );
 
-  // Initial run after 8 seconds startup delay
+  // Run ERP business automations every 5 minutes (each automation respects its own interval)
+  setInterval(
+    () => runErpAutomations().catch((e) => console.error('[Scheduler] ERP automation error:', e.message)),
+    5 * 60 * 1000
+  );
+
+  // Initial run after 15 seconds startup delay
   setTimeout(() => {
     processScheduledCampaigns().catch((e) => console.error('[Scheduler] init error:', e.message));
     runScheduledAutomations().catch((e) => console.error('[Scheduler] init automation error:', e.message));
-  }, 8000);
+    runErpAutomations().catch((e) => console.error('[Scheduler] init ERP automation error:', e.message));
+  }, 15000);
 
-  console.log('[Scheduler] Started — checking campaigns every 2min, automations every 30min');
+  console.log('[Scheduler] Started — campaigns every 2min, automations every 30min, ERP every 5min');
 };
 
 module.exports = { start };

@@ -5,7 +5,7 @@ import {
   Receipt, BarChart2, Settings, X, Store, ExternalLink,
   Zap, FlaskConical, UserCog, UserCheck, Shield, CheckCircle, Circle,
   ChevronRight, ChevronLeft, Sparkles, BookOpen, Megaphone, Activity, PanelLeftClose, PanelLeftOpen,
-  ClipboardList,
+  ClipboardList, Bot,
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import useShopStore  from '../store/shopStore';
@@ -25,6 +25,7 @@ const NAV = [
   { to: '/reports',     icon: BarChart2,       label: 'Reports',     perm: 'reports',    tour: 'nav-reports'   },
   { to: '/ai-insights', icon: Zap,             label: 'AI Insights', perm: 'ai',         tour: 'nav-ai'        },
   { to: '/campaigns',   icon: Megaphone,       label: 'Campaigns',   perm: 'customers'  },
+  { to: '/automations', icon: Bot,             label: 'Automations', perm: 'inventory'  },
   { to: '/roles',       icon: UserCog,         label: 'Roles',       perm: 'roles'      },
   { to: '/users',       icon: UserCheck,       label: 'Staff',       perm: 'staff'      },
 { to: '/admin',       icon: Shield,          label: 'Admin',       perm: null, superAdminOnly: true },
