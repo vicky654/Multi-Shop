@@ -19,7 +19,10 @@ const { Role }     = require('./src/modules/roles/role.model');
 const Notification = require('./src/modules/notifications/notification.model');
 
 // ── Config ────────────────────────────────────────────────────────
-const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/multi-shop';
+// Honour test mode so `npm run seed:test` populates the dedicated test database
+// (and never silently reseeds — i.e. wipes — production).
+const { resolveUri } = require('./src/config/db');
+const MONGO_URI = resolveUri().uri;
 const CLEAR     = !process.argv.includes('--no-clear');
 
 // ── Helpers ───────────────────────────────────────────────────────

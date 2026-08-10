@@ -14,15 +14,20 @@
 describe('Billing — Split Payment Flow', () => {
   let shopId;
   let productId;
+  let taxRate = 0;
 
   const PRODUCT_NAME  = 'Split Pay Test Shirt';
   const PRODUCT_PRICE = 800;  // Clean number makes math easy to assert
+
+  // Grand total for 1 unit as the POS displays it (GST included)
+  const grandTotalWithTax = () => PRODUCT_PRICE * (1 + taxRate / 100);
 
   before(() => {
     cy.login();
 
     cy.apiRequest('GET', '/shops').then((res) => {
-      shopId = res.body.data[0]?._id;
+      shopId  = Cypress.unwrapShops(res)[0]?._id;
+      taxRate = Number(Cypress.unwrapShops(res)[0]?.taxRate) || 0;
 
       cy.apiRequest('POST', '/products', {
         name:      PRODUCT_NAME,
@@ -42,6 +47,7 @@ describe('Billing — Split Payment Flow', () => {
   });
 
   beforeEach(() => {
+    cy.login();
     cy.goToBilling();
     cy.addProductToCart(PRODUCT_NAME);
   });
@@ -71,7 +77,9 @@ describe('Billing — Split Payment Flow', () => {
   it('TC-SPLIT-002: Pay button shows correct grand total (no tax)', () => {
     // Product price = ₹800, qty = 1, no discount, no tax
     cy.get('[data-testid="pay-button"]')
-      .should('contain.text', '₹800');
+      // The button shows the grand total, which includes the shop's GST —
+      // asserting a bare ₹800 fails on any shop with a tax rate configured.
+      .should('contain.text', `₹${grandTotalWithTax().toFixed(2)}`);
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -100,7 +108,7 @@ describe('Billing — Split Payment Flow', () => {
      * When you build the split payment UI, replace cy.apiRequest with UI steps.
      */
     cy.apiRequest('GET', '/shops').then((shopRes) => {
-      const sid = shopRes.body.data[0]?._id;
+      const sid = Cypress.unwrapShops(shopRes)[0]?._id;
 
       // POST a sale with a split payments[] array via direct API
       cy.apiRequest('POST', '/sales', {

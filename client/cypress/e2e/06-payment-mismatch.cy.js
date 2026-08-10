@@ -11,8 +11,12 @@
 
 describe('Payment Mismatch Protection', () => {
   let productId;
+  let taxRate = 0;
 
   const PRODUCT_PRICE = 800;
+
+  // Grand total for 1 unit as the POS displays it (GST included)
+  const grandTotalWithTax = () => PRODUCT_PRICE * (1 + taxRate / 100);
 
   before(() => {
     cy.login();
@@ -22,6 +26,17 @@ describe('Payment Mismatch Protection', () => {
       stock:  20,
     }).then(({ productId: id }) => {
       productId = id;
+    });
+  });
+
+  // cy.apiRequest reads the JWT from the restored Cypress session, and Cypress
+  // clears localStorage between tests — so every test needs cy.login() or the
+  // requests go out unauthenticated and 401.
+  beforeEach(() => {
+    cy.login();
+    // The pay button shows the grand total including GST, so tests need the rate
+    cy.apiRequest('GET', '/shops').then((res) => {
+      taxRate = Number(Cypress.unwrapShops(res)[0]?.taxRate) || 0;
     });
   });
 
@@ -134,6 +149,8 @@ describe('Payment Mismatch Protection', () => {
     // With single-method, Pay button should show ₹800 and be enabled
     cy.get('[data-testid="pay-button"]')
       .should('not.be.disabled')
-      .should('contain.text', '₹800');
+      // The button shows the grand total, which includes the shop's GST —
+      // asserting a bare ₹800 fails on any shop with a tax rate configured.
+      .should('contain.text', `₹${grandTotalWithTax().toFixed(2)}`);
   });
 });

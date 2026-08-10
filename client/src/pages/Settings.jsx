@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Edit2, Trash2, Store, Users, Link2, ExternalLink, Bell, MessageCircle, Send, Sun, Moon, Monitor, LayoutGrid, Tag, Clock } from 'lucide-react';
+import { Plus, Edit2, Trash2, Store, Users, Link2, ExternalLink, Bell, MessageCircle, Send, Sun, Moon, Monitor, LayoutGrid, Tag, Clock, QrCode } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { shopsApi } from '../api/shops.api';
 import { authApi } from '../api/auth.api';
@@ -11,6 +11,7 @@ import { usePermissions } from '../hooks/usePermissions';
 import useThemeStore from '../store/themeStore';
 import { PRIMARY_PRESETS } from '../styles/theme';
 import { BANNER_TEMPLATES } from '../components/SaleBanner';
+import { isValidVpa } from '../utils/upi';
 
 const SHOP_TYPES = ['clothes', 'toys', 'shoes', 'gifts', 'electronics', 'grocery', 'other'];
 const STAFF_ROLES = ['manager', 'billing_staff', 'inventory_staff'];
@@ -64,6 +65,32 @@ export default function Settings() {
       saleBanner: { ...data, endDate: data.endDate ? new Date(data.endDate) : null },
     }),
     onSuccess: () => { qc.invalidateQueries(['shops']); toast.success('Sale banner saved'); },
+    onError:   (e) => toast.error(e.message),
+  });
+
+  // ── UPI QR payment config ──────────────────────────────────────────────────
+  const EMPTY_UPI = { enabled: false, vpa: '', merchantName: '', displayName: '' };
+  const [upiForm, setUpiForm] = useState(EMPTY_UPI);
+
+  useEffect(() => {
+    setUpiForm(
+      activeShop?.upiSettings
+        ? { ...EMPTY_UPI, ...activeShop.upiSettings }
+        : { ...EMPTY_UPI, merchantName: activeShop?.name || '' }
+    );
+  }, [activeShop?._id]);
+
+  const upiVpaValid        = isValidVpa(upiForm.vpa);
+  const upiConfigComplete  = upiVpaValid && !!upiForm.merchantName.trim();
+  // Saving is allowed while disabled+empty (clearing the config) but never with
+  // a malformed VPA, and never enabled without a complete config.
+  const upiFormValid = upiForm.enabled
+    ? upiConfigComplete
+    : (!upiForm.vpa || upiVpaValid);
+
+  const updateUpiMut = useMutation({
+    mutationFn: (data) => shopsApi.update(activeShop._id, { upiSettings: data }),
+    onSuccess: () => { qc.invalidateQueries(['shops']); toast.success('UPI settings saved'); },
     onError:   (e) => toast.error(e.message),
   });
 
@@ -292,6 +319,118 @@ export default function Settings() {
           {!shops.length && <p className="text-sm text-gray-400 text-center py-8">No shops yet. Create your first shop!</p>}
         </div>
       </section>
+
+      {/* ── Payments → UPI Configuration ── */}
+      {can('settings') && activeShop && (
+        <section className="bg-white rounded-2xl border border-gray-200 p-6" data-testid="upi-settings">
+          <div className="flex items-center gap-2 mb-1">
+            <QrCode className="w-5 h-5 text-indigo-600" />
+            <h2 className="font-semibold text-gray-900 text-lg">Payments — UPI QR</h2>
+          </div>
+          <p className="text-sm text-gray-500 mb-5">
+            Lets customers scan and pay the exact bill amount from any UPI app.
+            Money goes directly to the UPI ID you set here.
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
+                UPI ID / VPA <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={upiForm.vpa}
+                onChange={(e) => setUpiForm({ ...upiForm, vpa: e.target.value.trim() })}
+                placeholder="yourshop@okhdfcbank"
+                data-testid="upi-vpa"
+                autoComplete="off"
+                className={`w-full h-10 px-3 border rounded-xl text-sm font-mono focus:outline-none transition ${
+                  upiForm.vpa && !upiVpaValid
+                    ? 'border-red-300 focus:border-red-400 bg-red-50/40'
+                    : 'border-gray-200 focus:border-indigo-400 bg-gray-50 focus:bg-white'
+                }`}
+              />
+              {upiForm.vpa && !upiVpaValid ? (
+                <p className="text-[11px] font-semibold text-red-500 mt-1">
+                  Not a valid UPI ID — it should look like <code>name@bank</code>.
+                </p>
+              ) : (
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Find this in your UPI app's profile. Never shared with customers beyond the QR.
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
+                Merchant / Store name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={upiForm.merchantName}
+                onChange={(e) => setUpiForm({ ...upiForm, merchantName: e.target.value })}
+                placeholder={activeShop.name}
+                data-testid="upi-merchant"
+                className="w-full h-10 px-3 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:bg-white focus:outline-none focus:border-indigo-400 transition"
+              />
+              <p className="text-[11px] text-gray-400 mt-1">
+                Shown as the payee inside the customer's UPI app.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
+                QR display name <span className="text-gray-400 normal-case font-medium">(optional)</span>
+              </label>
+              <input
+                type="text"
+                value={upiForm.displayName}
+                onChange={(e) => setUpiForm({ ...upiForm, displayName: e.target.value })}
+                placeholder="e.g. MultiShop — Main Branch"
+                className="w-full h-10 px-3 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:bg-white focus:outline-none focus:border-indigo-400 transition"
+              />
+              <p className="text-[11px] text-gray-400 mt-1">Label printed under the QR at the counter.</p>
+            </div>
+
+            <div className="flex flex-col justify-end">
+              <label className="flex items-center justify-between p-3 border border-gray-200 rounded-xl cursor-pointer hover:bg-gray-50 transition">
+                <span>
+                  <span className="block text-sm font-semibold text-gray-900">Enable UPI QR at checkout</span>
+                  <span className="block text-[11px] text-gray-400">Adds “Pay by UPI QR” to the POS</span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={upiForm.enabled}
+                  onChange={(e) => setUpiForm({ ...upiForm, enabled: e.target.checked })}
+                  data-testid="upi-enabled"
+                  className="w-5 h-5 accent-indigo-600"
+                />
+              </label>
+              {upiForm.enabled && !upiConfigComplete && (
+                <p className="text-[11px] font-semibold text-amber-600 mt-1.5">
+                  A valid UPI ID and merchant name are required to enable this.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 mt-5 pt-4 border-t border-gray-100">
+            <button
+              onClick={() => updateUpiMut.mutate(upiForm)}
+              disabled={!upiFormValid || updateUpiMut.isPending}
+              data-testid="upi-save"
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition"
+            >
+              {updateUpiMut.isPending ? 'Saving…' : 'Save UPI Settings'}
+            </button>
+            {activeShop.upiSettings?.enabled && (
+              <span className="text-xs font-bold text-green-700 bg-green-50 border border-green-200 px-2.5 py-1 rounded-full">
+                Live · {activeShop.upiSettings.vpa}
+              </span>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* ── Staff Management ── */}
       {can('staff') && (

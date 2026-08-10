@@ -1,17 +1,38 @@
 import { useRef, useState } from 'react';
 import { format } from 'date-fns';
-import { X, Printer, MessageCircle, Send, Loader2 } from 'lucide-react';
+import { X, Printer, MessageCircle, Send, Loader2, PencilLine } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { campaignsApi } from '../api/campaigns.api';
+import { usePermissions } from '../hooks/usePermissions';
+import BillEditHistory from './billing/BillEditHistory';
+import EditBillModal from './billing/EditBillModal';
+
+// Payment status → badge styling
+const PAY_BADGE = {
+  paid:      'bg-green-100 text-green-700',
+  pending:   'bg-amber-100 text-amber-700',
+  failed:    'bg-red-100 text-red-600',
+  cancelled: 'bg-gray-200 text-gray-600',
+};
 
 /**
- * Printable invoice modal.
- * Props: sale (populated sale object), shop (optional), onClose
+ * Bill details / printable invoice modal.
+ *
+ * Also the entry point for modifying a completed bill: authorised users
+ * (`edit_sale`) get an Edit button, and any past modifications are shown as an
+ * audit trail below the totals.
+ *
+ * Props:
+ *   sale      — populated sale object
+ *   onClose   — dismiss
+ *   onUpdated — optional; called with the updated sale after a successful edit
  */
-export default function InvoiceModal({ sale, onClose }) {
+export default function InvoiceModal({ sale, onClose, onUpdated }) {
   const printRef = useRef();
   const [waLink, setWaLink] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const { can } = usePermissions();
 
   const receiptMut = useMutation({
     mutationFn: (channel) => campaignsApi.sendReceipt({
@@ -37,6 +58,16 @@ export default function InvoiceModal({ sale, onClose }) {
 
   const shop = sale.shopId || {};
   const date = sale.createdAt ? format(new Date(sale.createdAt), 'dd MMM yyyy, hh:mm a') : '';
+
+  // A bill can only be amended once it is settled and untouched by refunds.
+  const payStatus  = sale.paymentStatus || 'paid';
+  const isRefunded = (sale.items || []).some((i) => (i.refundedQty || 0) > 0);
+  const canEditBill =
+    can('billing', 'update') &&
+    sale.status === 'completed' &&
+    payStatus === 'paid' &&
+    !isRefunded &&
+    !sale.isOnlineOrder;
 
   const handlePrint = () => {
     const content = printRef.current.innerHTML;
@@ -117,6 +148,16 @@ export default function InvoiceModal({ sale, onClose }) {
                 </button>
               </>
             )}
+            {canEditBill && (
+              <button
+                onClick={() => setEditing(true)}
+                data-testid="edit-bill-button"
+                title="Modify this bill (audited)"
+                className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-semibold transition"
+              >
+                <PencilLine className="w-4 h-4" /> Edit Bill
+              </button>
+            )}
             <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-900 text-white rounded-lg text-sm font-semibold transition">
               <Printer className="w-4 h-4" /> Print / PDF
             </button>
@@ -142,11 +183,24 @@ export default function InvoiceModal({ sale, onClose }) {
                 <p className="text-sm font-semibold uppercase tracking-widest text-gray-400">Invoice</p>
                 <p className="text-2xl font-black text-gray-900">{sale.invoiceNumber}</p>
                 <p className="text-sm text-gray-500 mt-1">{date}</p>
-                <span className={`inline-block mt-1 px-3 py-0.5 rounded-full text-xs font-bold ${
-                  sale.status === 'completed' ? 'bg-green-100 text-green-700' :
-                  sale.status === 'pending'   ? 'bg-yellow-100 text-yellow-700' :
-                  'bg-red-100 text-red-600'
-                }`}>{sale.status?.toUpperCase()}</span>
+                <div className="flex flex-wrap gap-1.5 justify-end mt-1">
+                  <span className={`inline-block px-3 py-0.5 rounded-full text-xs font-bold ${
+                    sale.status === 'completed' ? 'bg-green-100 text-green-700' :
+                    sale.status === 'pending'   ? 'bg-yellow-100 text-yellow-700' :
+                    'bg-red-100 text-red-600'
+                  }`}>{sale.status?.toUpperCase()}</span>
+                  <span
+                    className={`inline-block px-3 py-0.5 rounded-full text-xs font-bold ${PAY_BADGE[payStatus] || PAY_BADGE.paid}`}
+                    data-testid="payment-status-badge"
+                  >
+                    {payStatus === 'paid' ? 'PAID' : `PAYMENT ${payStatus.toUpperCase()}`}
+                  </span>
+                  {sale.editCount > 0 && (
+                    <span className="inline-block px-3 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700">
+                      EDITED ×{sale.editCount}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -196,11 +250,17 @@ export default function InvoiceModal({ sale, onClose }) {
                     <td className="py-2.5 px-3 text-gray-400">{i + 1}</td>
                     <td className="py-2.5 px-3">
                       <p className="font-medium text-gray-900">{item.name}</p>
-                      {(item.selectedSize || item.selectedColor) && (
-                        <p className="text-xs text-gray-400">
-                          {[item.selectedSize, item.selectedColor].filter(Boolean).join(' · ')}
-                        </p>
-                      )}
+                      {(() => {
+                        const meta = [
+                          item.sku || item.product?.sku,
+                          item.hsnCode && `HSN ${item.hsnCode}`,
+                          item.selectedSize,
+                          item.selectedColor,
+                        ].filter(Boolean);
+                        return meta.length
+                          ? <p className="text-xs text-gray-400">{meta.join(' · ')}</p>
+                          : null;
+                      })()}
                     </td>
                     <td className="py-2.5 px-3 text-right text-gray-700">₹{item.price.toLocaleString('en-IN')}</td>
                     <td className="py-2.5 px-3 text-right text-green-600">{item.discount || 0}%</td>
@@ -237,6 +297,36 @@ export default function InvoiceModal({ sale, onClose }) {
               </div>
             </div>
 
+            {/* UPI settlement details — proof of how the money arrived */}
+            {sale.isUpiQr && sale.upiTxn && (
+              <div className="mt-5 p-3 bg-indigo-50/60 border border-indigo-100 rounded-lg">
+                <p className="text-xs text-indigo-500 uppercase tracking-wide mb-1.5 font-bold">UPI Payment</p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-700">
+                  {sale.upiTxn.transactionId && (
+                    <p><span className="text-gray-400">Txn / UTR: </span>
+                      <span className="font-mono font-bold">{sale.upiTxn.transactionId}</span></p>
+                  )}
+                  {sale.upiTxn.refId && (
+                    <p><span className="text-gray-400">Ref: </span>
+                      <span className="font-mono">{sale.upiTxn.refId}</span></p>
+                  )}
+                  {sale.upiTxn.vpa && (
+                    <p><span className="text-gray-400">Paid to: </span>
+                      <span className="font-mono">{sale.upiTxn.vpa}</span></p>
+                  )}
+                  {sale.upiTxn.verifiedAt && (
+                    <p><span className="text-gray-400">Verified: </span>
+                      {format(new Date(sale.upiTxn.verifiedAt), 'dd MMM, hh:mm a')}</p>
+                  )}
+                  {sale.upiTxn.failureReason && (
+                    <p className="col-span-2 text-red-600">
+                      <span className="text-gray-400">Failure: </span>{sale.upiTxn.failureReason}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
             {sale.notes && (
               <div className="mt-5 p-3 bg-gray-50 rounded-lg">
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Notes</p>
@@ -246,8 +336,22 @@ export default function InvoiceModal({ sale, onClose }) {
 
             <p className="text-center text-xs text-gray-400 mt-6">Thank you for your purchase!</p>
           </div>
+
+          {/* Audit trail — outside printRef so receipts stay clean */}
+          <BillEditHistory sale={sale} />
         </div>
       </div>
+
+      {editing && (
+        <EditBillModal
+          sale={sale}
+          onClose={() => setEditing(false)}
+          onSaved={(updated) => {
+            setEditing(false);
+            onUpdated?.(updated);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -12,7 +12,22 @@ const buildFilter = (user, shopId, query) => {
 
   if (query.category)    filter.category    = query.category;
   if (query.subCategory) filter.subCategory = query.subCategory;
-  if (query.search)      filter.$text       = { $search: query.search };
+
+  // Substring search across the fields a cashier actually types or scans.
+  // A $text index only matches whole words, so "pep" would never find "Pepsi"
+  // and a hyphenated barcode wouldn't match at all — both fatal at the counter.
+  if (query.search) {
+    const term = String(query.search).trim();
+    if (term) {
+      const rx = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      filter.$or = [
+        { name: rx },
+        { sku: rx },
+        { barcode: rx },
+        { category: rx },
+      ];
+    }
+  }
   if (query.lowStock === 'true') filter.$expr = { $lte: ['$stock', '$lowStockThreshold'] };
   if (query.barcode)     filter.barcode     = query.barcode;
   if (query.isFeatured === 'true')   filter.isFeatured   = true;

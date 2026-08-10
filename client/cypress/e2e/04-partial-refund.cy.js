@@ -19,8 +19,10 @@ describe('Partial Refund Flow', () => {
   let productBId;
   let saleId;
 
-  const PRODUCT_A       = { name: 'Refund Test Notebook', price: 50,  costPrice: 30, stock: 20 };
-  const PRODUCT_B       = { name: 'Refund Test Pen',      price: 20,  costPrice: 10, stock: 30 };
+  // `category` is required by the Product model — without it seeding 400s and
+  // every test then fails with a confusing 422 on POST /sales.
+  const PRODUCT_A       = { name: 'Refund Test Notebook', category: 'Test', price: 50,  costPrice: 30, stock: 20 };
+  const PRODUCT_B       = { name: 'Refund Test Pen',      category: 'Test', price: 20,  costPrice: 10, stock: 30 };
   const SALE_QTY_A      = 5;
   const SALE_QTY_B      = 3;
   const PARTIAL_REFUND_A = 2; // refund 2 of 5 notebooks
@@ -30,7 +32,7 @@ describe('Partial Refund Flow', () => {
     cy.login();
 
     cy.apiRequest('GET', '/shops').then((res) => {
-      shopId = res.body.data[0]._id;
+      shopId = Cypress.unwrapShops(res)[0]._id;
 
       // Create product A
       cy.apiRequest('POST', '/products', { ...PRODUCT_A, shopId })
@@ -48,9 +50,10 @@ describe('Partial Refund Flow', () => {
 
   // ── Create the sale before each relevant test (use .then chaining) ────────
   beforeEach(() => {
+    cy.login();
     // Reset by creating a fresh sale
     cy.apiRequest('GET', '/shops').then((res) => {
-      const sid = res.body.data[0]._id;
+      const sid = Cypress.unwrapShops(res)[0]._id;
 
       cy.apiRequest('POST', '/sales', {
         shopId: sid,
@@ -78,7 +81,7 @@ describe('Partial Refund Flow', () => {
 
     cy.apiRequest('GET', `/products/${productAId}`).then((res) => {
       // After the sale, stock = PRODUCT_A.stock - SALE_QTY_A
-      stockBeforeA = res.body.data.stock;
+      stockBeforeA = Cypress.unwrapProduct(res).stock;
       expect(stockBeforeA).to.eq(PRODUCT_A.stock - SALE_QTY_A);
 
       // Execute partial refund: 2 of 5 notebooks
@@ -103,7 +106,7 @@ describe('Partial Refund Flow', () => {
 
         // Verify stock restored
         cy.apiRequest('GET', `/products/${productAId}`).then((prodRes) => {
-          const stockAfter = prodRes.body.data.stock;
+          const stockAfter = Cypress.unwrapProduct(prodRes).stock;
           expect(stockAfter).to.eq(stockBeforeA + PARTIAL_REFUND_A);
         });
       });
@@ -159,7 +162,7 @@ describe('Partial Refund Flow', () => {
   it('TC-REFUND-005: Stock fully restored after full refund', () => {
     // Get stock before
     cy.apiRequest('GET', `/products/${productAId}`).then((beforeRes) => {
-      const stockBefore = beforeRes.body.data.stock;
+      const stockBefore = Cypress.unwrapProduct(beforeRes).stock;
 
       // Full refund
       cy.apiRequest('PATCH', `/sales/${saleId}/refund`).then((refundRes) => {
@@ -167,7 +170,7 @@ describe('Partial Refund Flow', () => {
 
         // Verify stock is back to pre-sale level
         cy.apiRequest('GET', `/products/${productAId}`).then((afterRes) => {
-          expect(afterRes.body.data.stock).to.eq(stockBefore + SALE_QTY_A);
+          expect(Cypress.unwrapProduct(afterRes).stock).to.eq(stockBefore + SALE_QTY_A);
         });
       });
     });

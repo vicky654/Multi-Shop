@@ -4,7 +4,9 @@ const { Role, ALL_PERMISSIONS } = require('./role.model');
 const DEFAULT_ROLE_PERMISSIONS = {
   super_admin:     ALL_PERMISSIONS,
   owner:           ALL_PERMISSIONS,
-  manager:         ['view_products','create_product','edit_product','view_sales','create_sale','view_customers','manage_customers','view_expenses','manage_expenses','view_reports','view_dashboard','view_ai_insights'],
+  // 'edit_sale' matches what the PATCH /sales/:id route already allows by role;
+  // owners can revoke it by assigning a custom role without the permission.
+  manager:         ['view_products','create_product','edit_product','view_sales','create_sale','edit_sale','view_customers','manage_customers','view_expenses','manage_expenses','view_reports','view_dashboard','view_ai_insights'],
   billing_staff:   ['view_products','view_sales','create_sale','view_customers','manage_customers','view_dashboard'],
   inventory_staff: ['view_products','create_product','edit_product','view_dashboard'],
 };

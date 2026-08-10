@@ -574,7 +574,11 @@ export default function Orders() {
 
       {/* Modals */}
       {invoiceSale && (
-        <InvoiceModal sale={invoiceSale} onClose={() => setInvoiceSale(null)} />
+        <InvoiceModal
+          sale={invoiceSale}
+          onClose={() => setInvoiceSale(null)}
+          onUpdated={(updated) => { setInvoiceSale(updated); refetch(); }}
+        />
       )}
       {shareSale && (
         <ShareModal sale={shareSale} onClose={() => setShareSale(null)} />

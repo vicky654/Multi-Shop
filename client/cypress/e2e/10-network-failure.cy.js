@@ -18,6 +18,7 @@ describe('Network Failure During Checkout', () => {
   });
 
   beforeEach(() => {
+    cy.login();
     cy.goToBilling();
     // Add any in-stock product to the cart.
     // We use a search + click here — no seeding needed since we're testing

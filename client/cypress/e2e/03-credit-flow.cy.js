@@ -31,7 +31,7 @@ describe('Credit Flow — Sale → Ledger → Repayment', () => {
 
     // Get shop
     cy.apiRequest('GET', '/shops').then((res) => {
-      shopId = res.body.data[0]._id;
+      shopId = Cypress.unwrapShops(res)[0]._id;
 
       // Create test customer
       cy.apiRequest('POST', '/customers', {
@@ -58,6 +58,13 @@ describe('Credit Flow — Sale → Ledger → Repayment', () => {
     });
   });
 
+  // cy.apiRequest reads the JWT from the restored Cypress session, and Cypress
+  // clears localStorage between tests — so every test needs cy.login() or the
+  // requests go out unauthenticated and 401.
+  beforeEach(() => {
+    cy.login();
+  });
+
   // ── Cleanup ────────────────────────────────────────────────────────────────
   after(() => {
     // Note: no hard delete of customer (soft-delete would remove purchase history)
@@ -70,6 +77,11 @@ describe('Credit Flow — Sale → Ledger → Repayment', () => {
 
     // Search and add the product
     cy.addProductToCart(PRODUCT_NAME);
+
+    // A credit sale REQUIRES a customer — usePayment.validatePayment blocks
+    // checkout without one, so no POST /sales would ever fire.
+    cy.get('#customer-search-input').clear().type(CUSTOMER_NAME);
+    cy.contains(CUSTOMER_NAME, { timeout: 10000 }).click();
 
     // Select Credit payment
     cy.get('[data-testid="payment-credit"]').click();
@@ -131,7 +143,7 @@ describe('Credit Flow — Sale → Ledger → Repayment', () => {
   it('TC-CREDIT-003: Customer creditBalance updated after credit sale', () => {
     cy.apiRequest('GET', `/customers/${customerId}`).then((res) => {
       expect(res.status).to.eq(200);
-      const customer = res.body.data;
+      const customer = Cypress.unwrapCustomer(res);
       // creditBalance should reflect the outstanding amount
       expect(customer.creditBalance).to.be.gte(DUE_AMOUNT);
     });
@@ -170,7 +182,7 @@ describe('Credit Flow — Sale → Ledger → Repayment', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   it('TC-CREDIT-005: Customer creditBalance updated after repayment', () => {
     cy.apiRequest('GET', `/customers/${customerId}`).then((res) => {
-      const customer = res.body.data;
+      const customer = Cypress.unwrapCustomer(res);
       // After repaying ₹400 of ₹1000 → balance should be ₹600
       expect(customer.creditBalance).to.be.closeTo(DUE_AMOUNT - REPAY_AMOUNT, 1);
     });

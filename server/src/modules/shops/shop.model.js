@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { isValidVpa } = require('../../utils/upi');
 
 const shopSchema = new mongoose.Schema(
   {
@@ -30,6 +31,24 @@ const shopSchema = new mongoose.Schema(
       endDate:  { type: Date },
     },
 
+    // ── UPI QR payment settings ──────────────────────────────────────────────
+    // Configured per shop from Settings → Payments. Never hardcoded.
+    upiSettings: {
+      enabled:      { type: Boolean, default: false },
+      vpa:          {                                   // UPI ID / VPA
+        type: String,
+        trim: true,
+        default: '',
+        validate: {
+          // Allow empty (not yet configured); reject anything malformed.
+          validator: (v) => !v || isValidVpa(v),
+          message:   'Invalid UPI ID — expected a format like shopname@bank',
+        },
+      },
+      merchantName: { type: String, trim: true, default: '' }, // payee name in the UPI app
+      displayName:  { type: String, trim: true, default: '' }, // optional label shown under the QR
+    },
+
     // ── Notification settings ────────────────────────────────────────────────
     notifSettings: {
       ownerWhatsapp:       { type: String },          // WhatsApp number for daily summary
@@ -40,6 +59,20 @@ const shopSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// UPI QR cannot be switched on without a payee to send the money to.
+shopSchema.pre('validate', function (next) {
+  const upi = this.upiSettings;
+  if (upi?.enabled) {
+    if (!isValidVpa(upi.vpa)) {
+      return next(new Error('A valid UPI ID is required before enabling UPI QR payments'));
+    }
+    if (!upi.merchantName?.trim()) {
+      return next(new Error('Merchant / store name is required before enabling UPI QR payments'));
+    }
+  }
+  next();
+});
 
 // Auto-generate unique slug from name on first save
 shopSchema.pre('save', async function (next) {

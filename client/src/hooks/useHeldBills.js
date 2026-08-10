@@ -1,73 +1,72 @@
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
+import useHeldBillsStore from '../store/heldBillsStore';
 
-const STORAGE_KEY = 'multishop:held-bills';
-
-const load = () => {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-  } catch {
-    return [];
-  }
-};
-
-const persist = (bills) => {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(bills));
-  } catch {
-    // storage full — silently ignore
-  }
-};
+const LEGACY_KEY = 'multishop:held-bills';
 
 /**
- * useHeldBills — lightweight hold/resume for the Billing page.
+ * useHeldBills — hold/resume for the Billing page.
  *
- * A "held bill" is a snapshot of the current cart (items, customer, discount, etc.)
- * saved to localStorage so it can be resumed later without losing the current state.
+ * Thin wrapper over heldBillsStore (zustand + persist). State lives in the
+ * store so held bills survive navigation and page reloads, and so `resumeBill`
+ * can return the snapshot synchronously.
  *
  * Returns:
- *   heldBills   — array of held bill snapshots
- *   holdBill    — (label, snapshot) → saves current bill, returns bill id
- *   resumeBill  — (id) → returns the snapshot and removes it from the list
- *   deleteBill  — (id) → removes a held bill without resuming
+ *   heldBills   — array of held bill snapshots (newest last)
+ *   holdBill    — (label, snapshot) → saves the current bill, returns its id
+ *   resumeBill  — (id) → returns the snapshot, or null if it no longer exists.
+ *                 Does NOT remove it; call completeResume(id) once the cart has
+ *                 actually been restored so a failure can't lose the bill.
+ *   completeResume — (id) → drop the bill after a successful restore
+ *   deleteBill  — (id) → remove a held bill without resuming
  */
 export function useHeldBills() {
-  const [heldBills, setHeldBills] = useState(load);
+  const bills    = useHeldBillsStore((s) => s.bills);
+  const hold     = useHeldBillsStore((s) => s.hold);
+  const peek     = useHeldBillsStore((s) => s.peek);
+  const remove   = useHeldBillsStore((s) => s.remove);
+  const clearAll = useHeldBillsStore((s) => s.clearAll);
 
-  const holdBill = useCallback((label, snapshot) => {
-    const bill = {
-      id:        crypto.randomUUID(),
-      label:     label || `Bill ${new Date().toLocaleTimeString()}`,
-      heldAt:    Date.now(),
-      ...snapshot,
-    };
-    setHeldBills((prev) => {
-      const next = [...prev, bill];
-      persist(next);
-      return next;
-    });
-    return bill.id;
-  }, []);
+  const holdBill = useCallback((label, snapshot) => hold({
+    label: label || `Bill ${new Date().toLocaleTimeString()}`,
+    ...snapshot,
+  }), [hold]);
 
-  const resumeBill = useCallback((id) => {
-    let found = null;
-    setHeldBills((prev) => {
-      const next = prev.filter((b) => {
-        if (b.id === id) { found = b; return false; }
-        return true;
-      });
-      persist(next);
-      return next;
-    });
-    return found;
-  }, []);
+  const resumeBill = useCallback((id) => peek(id), [peek]);
 
-  const deleteBill = useCallback((id) => {
-    setHeldBills((prev) => {
-      const next = prev.filter((b) => b.id !== id);
-      persist(next);
-      return next;
-    });
-  }, []);
+  return {
+    heldBills: bills,
+    holdBill,
+    resumeBill,
+    completeResume: remove,
+    deleteBill: remove,
+    clearAll,
+  };
+}
 
-  return { heldBills, holdBill, resumeBill, deleteBill };
+/**
+ * One-time migration of bills parked under the old localStorage key.
+ * Safe to call on every mount — it clears the legacy key once imported.
+ */
+export function migrateLegacyHeldBills() {
+  try {
+    const raw = localStorage.getItem(LEGACY_KEY);
+    if (!raw) return;
+    const legacy = JSON.parse(raw);
+    if (Array.isArray(legacy) && legacy.length) {
+      const { bills } = useHeldBillsStore.getState();
+      const existing  = new Set(bills.map((b) => b.id));
+      const imported  = legacy
+        .filter((b) => b?.id && !existing.has(b.id))
+        .map((b, i) => ({
+          seq:    bills.length + i + 1,
+          billNo: `HOLD-${String(bills.length + i + 1).padStart(3, '0')}`,
+          heldAt: b.heldAt || Date.now(),
+          ...b,
+        }));
+      if (imported.length) useHeldBillsStore.setState({ bills: [...bills, ...imported] });
+    }
+    localStorage.removeItem(LEGACY_KEY);
+  } catch {
+    // corrupt legacy payload — nothing recoverable, move on
+  }
 }

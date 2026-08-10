@@ -18,6 +18,9 @@ import ImpersonationBanner  from '../components/ImpersonationBanner';
 import TourGuide     from '../components/TourGuide';
 import HelpPanel     from '../components/HelpPanel';
 import { useTour }   from '../hooks/useTour';
+import NewBillButton from '../components/NewBillButton';
+import { useGlobalShortcuts } from '../hooks/useGlobalShortcuts';
+import { migrateLegacyHeldBills } from '../hooks/useHeldBills';
 import useShopStore  from '../store/shopStore';
 import useAuthStore  from '../store/authStore';
 import useSetupStore from '../store/setupStore';
@@ -47,6 +50,12 @@ export default function DashboardLayout() {
 
   // Initialise Capacitor push notifications (no-op on web)
   usePushNotifications();
+
+  // Ctrl+B → POS Billing, available from every screen
+  useGlobalShortcuts();
+
+  // Import bills parked under the pre-store localStorage key (runs once)
+  useEffect(() => { migrateLegacyHeldBills(); }, []);
 
   const location = useLocation();
 
@@ -247,6 +256,9 @@ export default function DashboardLayout() {
         prevStep={tour.prevStep}
         skipTour={tour.skipTour}
       />
+
+      {/* Global POS shortcut — one click to a new bill from any screen */}
+      <NewBillButton />
 
       {/* Floating help panel — always available */}
       <HelpPanel />

@@ -22,6 +22,9 @@ const customerSchema = new mongoose.Schema(
     purchaseHistory: [purchaseHistorySchema],
     notes:         { type: String },
     creditBalance: { type: Number, default: 0, min: 0 }, // outstanding credit owed by customer
+    // Maximum credit this customer may carry. 0 = unlimited (no ceiling).
+    // Enforced in sale.service.createSale before any stock is touched.
+    creditLimit:   { type: Number, default: 0, min: 0 },
     isActive: { type: Boolean, default: true },
     isDemo:   { type: Boolean, default: false },
   },

@@ -51,6 +51,13 @@ describe('Negative Stock Prevention', () => {
     });
   });
 
+  // cy.apiRequest reads the JWT from the restored Cypress session, and Cypress
+  // clears localStorage between tests — so every test needs cy.login() or the
+  // requests go out unauthenticated and 401.
+  beforeEach(() => {
+    cy.login();
+  });
+
   after(() => {
     if (productId)          cy.apiRequest('DELETE', `/products/${productId}`);
     if (lowStockProductId)  cy.apiRequest('DELETE', `/products/${lowStockProductId}`);
@@ -69,7 +76,7 @@ describe('Negative Stock Prevention', () => {
 
         // Stock should now be exactly 0
         cy.apiRequest('GET', `/products/${productId}`).then((prodRes) => {
-          expect(prodRes.body.data.stock).to.eq(0);
+          expect(Cypress.unwrapProduct(prodRes).stock).to.eq(0);
         });
       });
     });
@@ -95,7 +102,7 @@ describe('Negative Stock Prevention', () => {
   it('TC-STOCK-003: Stock does NOT go negative after rejection', () => {
     // After the failed sale in TC-STOCK-002, stock must still be 0 — not -1
     cy.apiRequest('GET', `/products/${productId}`).then((res) => {
-      expect(res.body.data.stock).to.be.gte(0);
+      expect(Cypress.unwrapProduct(res).stock).to.be.gte(0);
     });
   });
 
@@ -123,7 +130,7 @@ describe('Negative Stock Prevention', () => {
         expect(res.status).to.eq(201);
 
         cy.apiRequest('GET', `/products/${lowStockProductId}`).then((prodRes) => {
-          expect(prodRes.body.data.stock).to.eq(0);
+          expect(Cypress.unwrapProduct(prodRes).stock).to.eq(0);
         });
       });
     });

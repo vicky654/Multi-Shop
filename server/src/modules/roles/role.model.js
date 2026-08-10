@@ -5,7 +5,7 @@ const ALL_PERMISSIONS = [
   // Products
   'view_products', 'create_product', 'edit_product', 'delete_product',
   // Sales
-  'view_sales', 'create_sale', 'refund_sale',
+  'view_sales', 'create_sale', 'refund_sale', 'edit_sale',
   // Customers
   'view_customers', 'manage_customers',
   // Expenses

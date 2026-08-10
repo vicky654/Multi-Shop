@@ -45,6 +45,40 @@ const recordCredit = async ({ customerId, shopId, saleId, amount, notes, recorde
   return entry;
 };
 
+// ── Adjust an existing credit (bill edited / UPI payment cancelled) ───────────
+// Posts a compensating entry rather than mutating history, so the running
+// balance chain and the audit trail both stay intact.
+//   delta > 0 → customer owes more  (type 'credit')
+//   delta < 0 → customer owes less  (type 'repay')
+const recordCreditAdjustment = async ({ customerId, shopId, saleId, delta, notes, recordedBy }, session) => {
+  const amount = +Math.abs(delta).toFixed(2);
+  if (amount === 0) return null;
+
+  const last = await CreditLedger.findOne({ customerId, shopId }, null, {
+    sort: { createdAt: -1 },
+    session,
+  });
+  const prevBalance = last?.balance ?? 0;
+  const newBalance  = Math.max(0, +(prevBalance + delta).toFixed(2));
+
+  const [entry] = await CreditLedger.create(
+    [{
+      customerId,
+      shopId,
+      saleId,
+      type:    delta > 0 ? 'credit' : 'repay',
+      amount,
+      balance: newBalance,
+      notes,
+      recordedBy,
+    }],
+    { session }
+  );
+
+  await Customer.findByIdAndUpdate(customerId, { $set: { creditBalance: newBalance } }, { session });
+  return entry;
+};
+
 // ── Record a repayment ─────────────────────────────────────────────────────────
 const recordRepayment = async (customerId, user, { shopId, amount, notes }) => {
   const customer = await Customer.findOne({ _id: customerId, shopId });
@@ -86,4 +120,4 @@ const getShopCreditSummary = async (user, shopId) => {
     .sort({ creditBalance: -1 });
 };
 
-module.exports = { getLedger, recordCredit, recordRepayment, getShopCreditSummary };
+module.exports = { getLedger, recordCredit, recordCreditAdjustment, recordRepayment, getShopCreditSummary };

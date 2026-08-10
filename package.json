@@ -1,0 +1,15 @@
+{
+  "name": "multi-shop",
+  "private": true,
+  "version": "1.0.0",
+  "description": "MultiShop — multi-shop inventory, billing and analytics. Root package exists to host the demo-asset automation; app code lives in client/ and server/.",
+  "scripts": {
+    "demo:update": "node scripts/demo/update.mjs",
+    "demo:seed": "node scripts/demo/seed-demo.mjs",
+    "demo:publish": "node scripts/demo/publish.mjs",
+    "demo:validate": "node scripts/demo/validate.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

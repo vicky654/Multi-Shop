@@ -45,6 +45,40 @@ const partialRefund = asyncHandler(async (req, res) => {
   success(res, result, 'Partial refund applied');
 });
 
+// ── UPI QR: confirm payment landed (requires a transaction reference) ─────────
+const verifyUpi = asyncHandler(async (req, res) => {
+  const sale = await saleService.verifyUpiPayment(req.params.id, req.user, req.body);
+  logAction(req, LOG_ACTIONS.PAYMENT_SUCCESS, 'sales',
+    `UPI payment verified for ${sale.invoiceNumber}`,
+    { saleId: req.params.id, transactionId: sale.upiTxn?.transactionId });
+  success(res, { sale }, 'Payment verified — bill completed');
+
+  // Receipt SMS, same as a counter sale
+  if (sale.customerId?.phone) {
+    notifService
+      .sendReceipt(sale.customerId, sale, sale.shopId?.name || '')
+      .catch((err) => console.error('[AutoSMS] Receipt error:', err.message));
+  }
+});
+
+// ── UPI QR: payment failed / abandoned — stock is restored ────────────────────
+const cancelUpi = asyncHandler(async (req, res) => {
+  const sale = await saleService.cancelUpiPayment(req.params.id, req.user, req.body);
+  logAction(req, LOG_ACTIONS.ORDER_UPDATE, 'sales',
+    `UPI payment ${sale.paymentStatus} for ${sale.invoiceNumber}`,
+    { saleId: req.params.id, reason: req.body?.reason });
+  success(res, { sale }, `Payment marked ${sale.paymentStatus} — stock restored`);
+});
+
+// ── Edit a completed bill (audited) ───────────────────────────────────────────
+const update = asyncHandler(async (req, res) => {
+  const sale = await saleService.updateSale(req.params.id, req.user, req.body);
+  logAction(req, LOG_ACTIONS.ORDER_UPDATE, 'sales',
+    `Edited bill ${sale.invoiceNumber}: ${req.body.reason}`,
+    { saleId: req.params.id, newTotal: sale.totalAmount, editCount: sale.editCount });
+  success(res, { sale }, 'Bill updated');
+});
+
 // ── Bulk sync (offline → online) ──────────────────────────────────────────────
 // Accepts { sales: [...] } — processes sequentially, returns per-item results.
 // Designed to be idempotent: each item carries an offlineId that prevents
@@ -67,4 +101,7 @@ const publicCheckout = asyncHandler(async (req, res) => {
   success(res, { sale }, 'Order placed successfully', 201);
 });
 
-module.exports = { create, getAll, getOne, refund, partialRefund, publicCheckout, bulkSync };
+module.exports = {
+  create, getAll, getOne, refund, partialRefund, publicCheckout, bulkSync,
+  verifyUpi, cancelUpi, update,
+};

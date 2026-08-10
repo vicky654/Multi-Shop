@@ -32,15 +32,42 @@
 
 A **multi-tenant, multi-shop ERP** for Indian SMB retail and wholesale businesses. It bridges POS-speed counter billing with ERP-depth tracking — covering inventory, purchase, sales, and accounting in one platform.
 
+### Tenant & Organizational Hierarchy
+
+```
+Tenant (Organization / Enterprise)
+  ├── Shop 1 (GST Legal Entity / Store Branch — GSTIN A)
+  │     ├── Location 1 (Main Store Front)
+  │     └── Location 2 (Backroom Warehouse)
+  └── Shop 2 (Store Branch — GSTIN B or same GSTIN)
+        └── Location 3 (Regional Warehouse)
+```
+
+- **Shop:** Commercial entity and GST tax filing unit. Owns document numbering sequences.
+- **Location:** Physical storage point (store, warehouse, or transit zone). Stock is tracked per `productId + locationId`.
+
+### Multi-Tenant Document Numbering Rules
+
+- Document numbers are scoped per **Shop, per Financial Year, per Document Type**:
+  `{SHOP_CODE}-{DOC_TYPE}-{FY_YYZZ}-{SEQ:4}` (e.g., `MUM-INV-2526-0001`, `DEL-PO-2526-0042`).
+- Under CGST Rule 46, distinct places of business or shops under the same GSTIN must maintain non-colliding, sequential document series. Assigning a unique prefix per shop ensures full statutory compliance and zero sequence collisions across multi-shop tenants.
+
+### Warehouse vs Shop Transfer Behavior
+
+- **Intra-Shop Transfer (Location A ➔ Location B under same shop):** Executed via `StockTransfer` (`transfer_out` at source, `transfer_in` at destination). Pure stock ledger movement without tax or voucher entries.
+- **Inter-Shop Transfer (Shop 1 ➔ Shop 2 under same tenant):**
+  - *Same GSTIN:* Handled via Delivery Challan / Stock Transfer Note.
+  - *Different GSTIN (Interstate/Intrastate branch transfer):* Auto-generates a Branch Transfer Tax Invoice per GST valuation rules.
+
 ### Target Business Types
 
-| Business | Fit |
-|----------|-----|
-| General retail (single/multi-shop) | Excellent |
-| Pharma / FMCG wholesale | Good (batch+expiry) |
-| B2B trading / dealer network | Good (PO+SO+credit) |
-| Textile / apparel wholesale | Medium (variants missing) |
-| Restaurant / F&B | Poor (no BOM/table) |
+| Business | Fit | Notes |
+|----------|-----|-------|
+| General retail (single/multi-shop) | Excellent | Full POS & inventory tracking |
+| Pharma / FMCG wholesale | Good | Batch + Expiry + FEFO pick |
+| B2B trading / dealer network | Good | PO + SO + Credit limits + Price Lists |
+| Textile / apparel wholesale | Excellent | Supported via Variant-Ready Schema (`hasVariants`) |
+| Restaurant / F&B | Poor | No BOM/table management |
 
 ### Central Data Architecture
 
@@ -203,17 +230,25 @@ These are not in conflict. The business configures which applies per customer ty
   _id, shopId,
   name, sku, barcode, hsnCode,          // hsnCode: required for GST compliance
   category, brand, unit,
-  costPrice, sellingPrice, discount,
+  costPrice, sellingPrice, averageCostPrice, // averageCostPrice: computed via MAC
+  discount,
   taxSlabId,                             // ref → TaxSlab
   taxType: enum['taxable','exempt','nil_rated','zero_rated'],
+  taxInclusive: Boolean,                 // tax inclusive vs exclusive flag
+  hasVariants: Boolean,                  // true if this is a parent product with variants
+  parentProductId: ObjectId,             // null for parent/standalone, set for variant child
+  variantAttributes: [                   // e.g. [{ key: "Size", value: "XL" }, { key: "Color", value: "Blue" }]
+    { key: String, value: String }
+  ],
   trackBatch: Boolean,
   trackExpiry: Boolean,
   minStock, maxStock, reorderPoint,
   images: [],
-  isActive,                              // NEVER delete products, only deactivate
+  isActive: Boolean,                     // NEVER delete products, soft delete via isActive = false
   createdAt, updatedAt
 }
 ```
+*Note: Transaction line items (`StockLedger`, `Invoice.items`, `GRN.items`) always reference `productId` (pointing to the specific variant SKU if `hasVariants: true`, or single product if `false`).*
 
 **Indexes:**
 ```js
@@ -236,6 +271,7 @@ These are not in conflict. The business configures which applies per customer ty
   reserved: Number,                      // from confirmed SalesOrders
   available: Number,                     // physical - reserved
   incoming: Number,                      // from approved POs not yet received
+  averageCostPrice: Number,              // Moving Weighted Average Cost (MAC) for valuation
   lastUpdatedAt,
   version: Number                        // for optimistic concurrency
 }
@@ -650,6 +686,51 @@ These are not in conflict. The business configures which applies per customer ty
 
 ---
 
+### PriceList (Customer & Tier Pricing)
+
+```js
+{
+  _id, shopId,
+  name: String,                          // e.g., "Wholesale", "VIP Customer", "Dealer Tier 1"
+  description: String,
+  currency: String,                      // default "INR"
+  rules: [{
+    productId: ObjectId,
+    minQty: Number,                      // quantity threshold
+    tierPrice: Number,                   // fixed price override
+    discountPercent: Number              // % discount override
+  }],
+  isActive: Boolean,
+  createdAt, updatedAt
+}
+```
+
+*Pricing Resolution:* `Customer Specific Custom Price > Quantity Tier Price > Customer PriceList > Product Default Selling Price`.
+
+---
+
+### AuditLog (Immutable System Audit Trail)
+
+```js
+{
+  _id, tenantId, shopId,
+  entityType: enum['Invoice','GRN','PurchaseOrder','SalesOrder','StockLedger','Payment','SupplierBill','CreditNote','DebitNote'],
+  entityId: ObjectId,
+  action: enum['create','update','approve','post','cancel','payment','settle'],
+  changes: {
+    before: Object,
+    after: Object
+  },
+  performedBy: ObjectId,
+  ipAddress: String,
+  userAgent: String,
+  timestamp: Date
+}
+```
+*Note: Append-only collection. Every approval, posting, cancellation, and payment creates an unalterable audit log entry.*
+
+---
+
 ## 5. Inventory Logic
 
 ### Stock Formula
@@ -759,6 +840,40 @@ async function checkReorderPoints(shopId) {
 }
 ```
 
+### Inventory Valuation — Moving Weighted Average Cost (MAC)
+
+While FEFO (First Expired, First Out) is used for **physical batch selection**, accounting inventory valuation uses **Moving Weighted Average Cost (MAC)**.
+
+On every posted `GRN`:
+```js
+async function updateMovingAverageCost(productId, shopId, receivedQty, receivedRate) {
+  const snapshot = await StockSnapshot.findOne({ productId, shopId });
+  const currentPhysical = snapshot ? snapshot.physical : 0;
+  const currentAvgCost = snapshot && snapshot.averageCostPrice ? snapshot.averageCostPrice : 0;
+
+  const newTotalQty = currentPhysical + receivedQty;
+  const newAvgCost = newTotalQty > 0 
+    ? ((currentPhysical * currentAvgCost) + (receivedQty * receivedRate)) / newTotalQty
+    : receivedRate;
+
+  await StockSnapshot.updateOne(
+    { productId, shopId },
+    { $set: { averageCostPrice: newAvgCost } }
+  );
+  await Product.updateOne(
+    { _id: productId },
+    { $set: { averageCostPrice: newAvgCost } }
+  );
+}
+```
+
+### Negative Stock Control Policy
+
+Configured via Shop Settings: `negativeStockPolicy: enum['block', 'warning', 'manager_override']` (Default: `'warning'` for B2C POS counter sales, `'manager_override'` for ERP sales orders).
+
+- Walk-in counter billing is not blocked by stock sync delays.
+- If negative stock occurs, `StockLedger` records negative physical stock and triggers an instant `NEGATIVE_STOCK_ALERT` to store manager. Costing resolves upon the next posted `GRN`.
+
 ---
 
 ## 6. Accounting Integration
@@ -767,20 +882,35 @@ async function checkReorderPoints(shopId) {
 
 ```js
 function calculateLineGST(item, shopStateCode, placeOfSupply) {
-  const { taxType, taxSlab, rate, qty, discount } = item;
+  const { taxType, taxSlab, rate, qty, discount, taxInclusive } = item;
 
-  if (taxType === 'exempt') return { cgst: 0, sgst: 0, igst: 0 };
-  if (taxType === 'nil_rated' || taxType === 'zero_rated') return { cgst: 0, sgst: 0, igst: 0 };
+  if (taxType === 'exempt' || taxType === 'nil_rated' || taxType === 'zero_rated') {
+    return { taxable: rate * qty * (1 - (discount || 0) / 100), cgst: 0, sgst: 0, igst: 0 };
+  }
 
-  const taxable = rate * qty * (1 - (discount || 0) / 100);
+  const grossAmount = rate * qty * (1 - (discount || 0) / 100);
+  let taxable = grossAmount;
+
+  if (taxInclusive) {
+    taxable = grossAmount / (1 + taxSlab / 100);
+  }
+
+  const totalTax = grossAmount - taxable;
+
   if (placeOfSupply !== shopStateCode) {
-    return { igst: taxable * taxSlab / 100, cgst: 0, sgst: 0 };  // Interstate
+    return { taxable, igst: totalTax, cgst: 0, sgst: 0 };       // Interstate
   } else {
-    const half = (taxable * taxSlab / 100) / 2;
-    return { igst: 0, cgst: half, sgst: half };                  // Intrastate
+    return { taxable, igst: 0, cgst: totalTax / 2, sgst: totalTax / 2 }; // Intrastate
   }
 }
 ```
+
+### Modular Accounting Mode
+
+- **Background Dual-Entry Engine:** `VoucherEntries` are **always generated by backend transaction handlers** behind the scenes to maintain strict financial balance.
+- **UI Mode Toggle (`enableAdvancedAccounting: Boolean`):**
+  - **Simple Mode (`false`):** Hides Chart of Accounts, Vouchers, and General Ledger from UI. Shows simple Cash/Bank balances, Customer Receivables, Supplier Payables, and Sales Summaries. Ideal for small retail shops.
+  * **Full ERP Mode (`true`):** Enables Daybook, Trial Balance, Profit & Loss, Balance Sheet, and custom Journal Vouchers for accountants.
 
 ### Auto-Generated Vouchers
 
@@ -1089,6 +1219,9 @@ const PERMISSIONS = {
 | Duplicate invoice number | Unique index `{ shopId, invoiceNumber }` at DB level |
 | Stock adjustment vs reservation | Block if `adjustmentQty` would make `available < 0`; show reserved qty in UI |
 | Reservation expiry | Cron: SalesOrders past `reservationExpiresAt` auto-cancelled, stock released |
+| POS Offline Billing | IndexedDB queue + client UUID `idempotencyKey` ➔ auto-sync on network reconnect |
+| Multi-Document Writes | Mandatory MongoDB ACID Transactions (`session.withTransaction()`) |
+| Data Retention Policy | Soft-delete only (`isActive: false`, `archivedAt`) for Masters; transactions are immutable |
 
 ---
 

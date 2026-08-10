@@ -3,7 +3,7 @@ import { defineConfig } from 'cypress';
 export default defineConfig({
   e2e: {
     // ── Server endpoints ────────────────────────────────────────────────────────
-    baseUrl: 'http://localhost:4000',   // Vite dev server
+    baseUrl: 'http://127.0.0.1:4000',   // Vite dev server
 
     // ── Spec discovery ──────────────────────────────────────────────────────────
     specPattern:    'cypress/e2e/**/*.cy.{js,jsx}',
@@ -49,7 +49,7 @@ export default defineConfig({
       managerPassword: 'manager123',
 
       // ── API base (backend port = 5001) ────────────────────────────────────────
-      apiUrl: 'http://localhost:5001/api',
+      apiUrl: 'http://127.0.0.1:5001/api',
 
       // ── Feature flags for conditional test behavior ───────────────────────────
       skipSlowTests:   false,  // set true in cypress.env.json to skip long suites

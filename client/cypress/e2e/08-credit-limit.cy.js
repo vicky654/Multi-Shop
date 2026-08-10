@@ -57,6 +57,13 @@ describe('Credit Over-Limit Scenario', () => {
     });
   });
 
+  // cy.apiRequest reads the JWT from the restored Cypress session, and Cypress
+  // clears localStorage between tests — so every test needs cy.login() or the
+  // requests go out unauthenticated and 401.
+  beforeEach(() => {
+    cy.login();
+  });
+
   after(() => {
     if (productId) cy.apiRequest('DELETE', `/products/${productId}`);
   });
@@ -75,7 +82,7 @@ describe('Credit Over-Limit Scenario', () => {
 
       // Customer balance should now be ₹600
       cy.apiRequest('GET', `/customers/${customerId}`).then((custRes) => {
-        expect(custRes.body.data.creditBalance).to.be.closeTo(PRODUCT_PRICE, 1);
+        expect(Cypress.unwrapCustomer(custRes).creditBalance).to.be.closeTo(PRODUCT_PRICE, 1);
       });
     });
   });
@@ -101,7 +108,7 @@ describe('Credit Over-Limit Scenario', () => {
   it('TC-CLIMIT-003: Balance unchanged after rejected over-limit sale', () => {
     // Balance should still be ₹600 — not ₹1200
     cy.apiRequest('GET', `/customers/${customerId}`).then((res) => {
-      expect(res.body.data.creditBalance).to.be.closeTo(PRODUCT_PRICE, 1);
+      expect(Cypress.unwrapCustomer(res).creditBalance).to.be.closeTo(PRODUCT_PRICE, 1);
     });
   });
 
@@ -127,7 +134,7 @@ describe('Credit Over-Limit Scenario', () => {
         expect(saleRes.status).to.eq(201);
 
         cy.apiRequest('GET', `/customers/${customerId}`).then((custRes) => {
-          expect(custRes.body.data.creditBalance).to.be.closeTo(800, 2);
+          expect(Cypress.unwrapCustomer(custRes).creditBalance).to.be.closeTo(800, 2);
         });
       });
     });
@@ -163,7 +170,7 @@ describe('Credit Over-Limit Scenario', () => {
   it('TC-CLIMIT-006: Credit ledger summary excludes zero-balance customers', () => {
     // Fully repay the limited customer
     cy.apiRequest('GET', `/customers/${customerId}`).then((custRes) => {
-      const outstanding = custRes.body.data.creditBalance;
+      const outstanding = Cypress.unwrapCustomer(custRes).creditBalance;
 
       cy.apiRequest('POST', `/credit-ledger/${customerId}/repay`, {
         shopId,

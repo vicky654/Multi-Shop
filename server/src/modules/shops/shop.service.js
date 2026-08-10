@@ -1,5 +1,6 @@
 const Shop = require('./shop.model');
 const User = require('../auth/auth.model');
+const { isValidVpa } = require('../../utils/upi');
 
 const createShop = async (ownerId, data) => {
   const shop = await Shop.create({ ...data, owner: ownerId });
@@ -24,6 +25,30 @@ const getShopById = async (shopId, user) => {
 };
 
 const updateShop = async (shopId, ownerId, role, data) => {
+  // `pre('validate')` hooks don't fire on findOneAndUpdate, so the UPI guard
+  // is enforced here — this is the path Settings → Payments actually uses.
+  if (data.upiSettings) {
+    const { enabled, vpa, merchantName } = data.upiSettings;
+    if (vpa && !isValidVpa(vpa)) {
+      throw Object.assign(
+        new Error('Invalid UPI ID — expected a format like shopname@bank'),
+        { status: 400 }
+      );
+    }
+    if (enabled && !isValidVpa(vpa)) {
+      throw Object.assign(
+        new Error('A valid UPI ID is required before enabling UPI QR payments'),
+        { status: 400 }
+      );
+    }
+    if (enabled && !merchantName?.trim()) {
+      throw Object.assign(
+        new Error('Merchant / store name is required before enabling UPI QR payments'),
+        { status: 400 }
+      );
+    }
+  }
+
   const filter = role === 'super_admin' ? { _id: shopId } : { _id: shopId, owner: ownerId };
   const shop = await Shop.findOneAndUpdate(filter, data, { new: true, runValidators: true });
   if (!shop) throw Object.assign(new Error('Shop not found or access denied'), { status: 404 });

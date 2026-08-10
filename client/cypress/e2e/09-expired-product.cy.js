@@ -87,6 +87,13 @@ describe('Expired Product Handling', () => {
     });
   });
 
+  // cy.apiRequest reads the JWT from the restored Cypress session, and Cypress
+  // clears localStorage between tests — so every test needs cy.login() or the
+  // requests go out unauthenticated and 401.
+  beforeEach(() => {
+    cy.login();
+  });
+
   after(() => {
     [expiredProductId, soonToExpireProductId, validProductId, noExpiryProductId]
       .filter(Boolean)
@@ -111,7 +118,7 @@ describe('Expired Product Handling', () => {
   it('TC-EXPIRY-002: Stock not decremented when expired product sale is rejected', () => {
     cy.apiRequest('GET', `/products/${expiredProductId}`).then((res) => {
       // Stock must still be 10 — the rejected sale must not have touched it
-      expect(res.body.data.stock).to.eq(10);
+      expect(Cypress.unwrapProduct(res).stock).to.eq(10);
     });
   });
 
@@ -141,7 +148,7 @@ describe('Expired Product Handling', () => {
   it('TC-EXPIRY-005: Product API returns correct expiryDate and batchNumber', () => {
     cy.apiRequest('GET', `/products/${soonToExpireProductId}`).then((res) => {
       expect(res.status).to.eq(200);
-      const product = res.body.data;
+      const product = Cypress.unwrapProduct(res);
 
       // expiryDate should be returned as a parseable date string
       expect(product.expiryDate).to.be.a('string');
@@ -156,7 +163,7 @@ describe('Expired Product Handling', () => {
     // The products API should indicate when a product is expired
     // so the UI can highlight it (red badge, etc.)
     cy.apiRequest('GET', `/products/${expiredProductId}`).then((res) => {
-      const product = res.body.data;
+      const product = Cypress.unwrapProduct(res);
       const isExpired = new Date(product.expiryDate) < new Date();
 
       // This is a data-level assertion — the API must return the expiry date

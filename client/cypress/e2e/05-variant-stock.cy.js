@@ -33,7 +33,7 @@ describe('Variant Stock Flow', () => {
     cy.login();
 
     cy.apiRequest('GET', '/shops').then((res) => {
-      shopId = res.body.data[0]._id;
+      shopId = Cypress.unwrapShops(res)[0]._id;
 
       cy.apiRequest('POST', '/products', {
         name:               PRODUCT_NAME,
@@ -52,6 +52,13 @@ describe('Variant Stock Flow', () => {
     });
   });
 
+  // cy.apiRequest reads the JWT from the restored Cypress session, and Cypress
+  // clears localStorage between tests — so every test needs cy.login() or the
+  // requests go out unauthenticated and 401.
+  beforeEach(() => {
+    cy.login();
+  });
+
   // ── Cleanup ────────────────────────────────────────────────────────────────
   after(() => {
     if (productId) cy.apiRequest('DELETE', `/products/${productId}`);
@@ -60,15 +67,15 @@ describe('Variant Stock Flow', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   it('TC-VAR-001: Selling a variant only decrements that variant\'s stock', () => {
     cy.apiRequest('GET', '/shops').then((shopRes) => {
-      const sid = shopRes.body.data[0]._id;
+      const sid = Cypress.unwrapShops(shopRes)[0]._id;
 
       cy.apiRequest('POST', '/sales', {
         shopId: sid,
         items: [{
           productId,
           quantity:    SELL_QTY,
-          variantSize:  SELL_SIZE,
-          variantColor: SELL_COLOR,
+          selectedSize:  SELL_SIZE,
+          selectedColor: SELL_COLOR,
         }],
         paymentMethod: 'cash',
       }).then((saleRes) => {
@@ -77,7 +84,7 @@ describe('Variant Stock Flow', () => {
         // Now check the product's variantStock
         cy.apiRequest('GET', `/products/${productId}`).then((prodRes) => {
           expect(prodRes.status).to.eq(200);
-          const { variantStock } = prodRes.body.data;
+          const { variantStock } = Cypress.unwrapProduct(prodRes);
 
           // Size M (Blue) should be decremented
           const varM = variantStock.find(
@@ -103,15 +110,15 @@ describe('Variant Stock Flow', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   it('TC-VAR-002: _trackVariant flag is NOT persisted in sale document', () => {
     cy.apiRequest('GET', '/shops').then((shopRes) => {
-      const sid = shopRes.body.data[0]._id;
+      const sid = Cypress.unwrapShops(shopRes)[0]._id;
 
       cy.apiRequest('POST', '/sales', {
         shopId: sid,
         items: [{
           productId,
           quantity:     1,
-          variantSize:  SELL_SIZE,
-          variantColor: SELL_COLOR,
+          selectedSize:  SELL_SIZE,
+          selectedColor: SELL_COLOR,
         }],
         paymentMethod: 'cash',
       }).then((saleRes) => {
@@ -131,15 +138,15 @@ describe('Variant Stock Flow', () => {
     // Size L has stock = 3 (original). After TC-VAR-001 and TC-VAR-002 it should
     // still be 3 (those tests only touched M). Try to sell 99 of L.
     cy.apiRequest('GET', '/shops').then((shopRes) => {
-      const sid = shopRes.body.data[0]._id;
+      const sid = Cypress.unwrapShops(shopRes)[0]._id;
 
       cy.apiRequest('POST', '/sales', {
         shopId: sid,
         items: [{
           productId,
           quantity:     99,
-          variantSize:  'L',
-          variantColor: 'Red',
+          selectedSize:  'L',
+          selectedColor: 'Red',
         }],
         paymentMethod: 'cash',
       }).then((res) => {
@@ -154,15 +161,15 @@ describe('Variant Stock Flow', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   it('TC-VAR-004: Cannot sell a non-existent variant (size XL)', () => {
     cy.apiRequest('GET', '/shops').then((shopRes) => {
-      const sid = shopRes.body.data[0]._id;
+      const sid = Cypress.unwrapShops(shopRes)[0]._id;
 
       cy.apiRequest('POST', '/sales', {
         shopId: sid,
         items: [{
           productId,
           quantity:     1,
-          variantSize:  'XL',   // does not exist
-          variantColor: 'Red',
+          selectedSize:  'XL',   // does not exist
+          selectedColor: 'Red',
         }],
         paymentMethod: 'cash',
       }).then((res) => {
@@ -177,18 +184,18 @@ describe('Variant Stock Flow', () => {
   it('TC-VAR-005: Root-level stock is decremented when variant is sold', () => {
     // Get current root stock
     cy.apiRequest('GET', `/products/${productId}`).then((beforeRes) => {
-      const rootStockBefore = beforeRes.body.data.stock;
+      const rootStockBefore = Cypress.unwrapProduct(beforeRes).stock;
 
       cy.apiRequest('GET', '/shops').then((shopRes) => {
-        const sid = shopRes.body.data[0]._id;
+        const sid = Cypress.unwrapShops(shopRes)[0]._id;
 
         cy.apiRequest('POST', '/sales', {
           shopId: sid,
           items: [{
             productId,
             quantity:     1,
-            variantSize:  'S',
-            variantColor: 'Red',
+            selectedSize:  'S',
+            selectedColor: 'Red',
           }],
           paymentMethod: 'cash',
         }).then((saleRes) => {
@@ -196,7 +203,7 @@ describe('Variant Stock Flow', () => {
 
           cy.apiRequest('GET', `/products/${productId}`).then((afterRes) => {
             // Root stock should also decrease by 1
-            expect(afterRes.body.data.stock).to.eq(rootStockBefore - 1);
+            expect(Cypress.unwrapProduct(afterRes).stock).to.eq(rootStockBefore - 1);
           });
         });
       });
@@ -206,7 +213,7 @@ describe('Variant Stock Flow', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   it('TC-VAR-006: Fractional quantity (0.5) works for variant items', () => {
     cy.apiRequest('GET', '/shops').then((shopRes) => {
-      const sid = shopRes.body.data[0]._id;
+      const sid = Cypress.unwrapShops(shopRes)[0]._id;
 
       // S variant has stock 10 (TC-VAR-005 sold 1 → 9 remaining)
       // Selling 0.5 should be valid (fractional qty support)
@@ -215,8 +222,8 @@ describe('Variant Stock Flow', () => {
         items: [{
           productId,
           quantity:     0.5,
-          variantSize:  'S',
-          variantColor: 'Red',
+          selectedSize:  'S',
+          selectedColor: 'Red',
         }],
         paymentMethod: 'cash',
       }).then((res) => {
@@ -231,15 +238,15 @@ describe('Variant Stock Flow', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   it('TC-VAR-007: Variant sale appears correctly in sale.items[]', () => {
     cy.apiRequest('GET', '/shops').then((shopRes) => {
-      const sid = shopRes.body.data[0]._id;
+      const sid = Cypress.unwrapShops(shopRes)[0]._id;
 
       cy.apiRequest('POST', '/sales', {
         shopId: sid,
         items: [{
           productId,
           quantity:     1,
-          variantSize:  SELL_SIZE,
-          variantColor: SELL_COLOR,
+          selectedSize:  SELL_SIZE,
+          selectedColor: SELL_COLOR,
         }],
         paymentMethod: 'cash',
       }).then((saleRes) => {
@@ -247,8 +254,8 @@ describe('Variant Stock Flow', () => {
         const item = saleRes.body.data.sale.items[0];
 
         // Sale item should record the variant details
-        expect(item.variantSize).to.eq(SELL_SIZE);
-        expect(item.variantColor).to.eq(SELL_COLOR);
+        expect(item.selectedSize).to.eq(SELL_SIZE);
+        expect(item.selectedColor).to.eq(SELL_COLOR);
         expect(item.quantity).to.eq(1);
         expect(item.refundedQty).to.eq(0); // default
       });

@@ -37,6 +37,7 @@ const MODULE_ACTION_MAP = {
   billing:    {
     view:   'view_sales',
     create: 'create_sale',
+    update: 'edit_sale',      // modify a completed bill (audited)
     refund: 'refund_sale',
   },
   customers:  {

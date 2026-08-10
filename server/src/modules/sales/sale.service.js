@@ -6,11 +6,15 @@ const Shop          = require('../shops/shop.model');
 const cache         = require('../../utils/cache');
 const ledgerService = require('../customers/creditLedger.service');
 const stockService  = require('../inventory/stock.service');
+const { isValidVpa, isValidTxnRef } = require('../../utils/upi');
 
 // ── Build enriched items from raw cart items ──────────────────────────────────
 // preservePrice: when true (offline-synced sales), use item.price if set so
 // the sale is recorded at the price the customer was shown, not the current DB price.
-const enrichItems = async (items, { preservePrice = false } = {}) => {
+// skipStockCheck: used when editing an existing bill — that bill already holds
+// its stock, so availability is judged on the *delta* (see buildStockDeltaOps)
+// rather than the full new quantity, which would wrongly reject reductions.
+const enrichItems = async (items, { preservePrice = false, skipStockCheck = false, skipExpiryCheck = false } = {}) => {
   let totalAmount = 0, totalDiscount = 0, totalProfit = 0;
   const enrichedItems = [];
 
@@ -28,6 +32,26 @@ const enrichItems = async (items, { preservePrice = false } = {}) => {
     const color = item.selectedColor || item.color || '';
     const qty   = Number(item.quantity);
 
+    // ── Expiry guard ───────────────────────────────────────────────────────────
+    // Enforced here, not just in the client cart: the API is reachable directly
+    // (offline sync, public checkout, integrations), so a client-only check let
+    // expired stock be sold. Skipped for edits of an already-recorded bill,
+    // where the goods left the shelf before the expiry date passed.
+    // Gated on expiryDate alone, NOT on trackExpiry: that flag controls expiry
+    // *reporting*, so requiring it would let any product with a known-past
+    // expiry date be sold simply because nobody ticked the box.
+    if (!skipExpiryCheck && product.expiryDate) {
+      const expiry = new Date(product.expiryDate);
+      if (expiry < new Date()) {
+        throw Object.assign(
+          new Error(
+            `"${product.name}" expired on ${expiry.toLocaleDateString('en-IN')} and cannot be sold`
+          ),
+          { status: 400 }
+        );
+      }
+    }
+
     // ── Variant-level stock check ──────────────────────────────────────────────
     if (product.trackVariantStock && (size || color)) {
       const variant = (product.variantStock || []).find(
@@ -35,10 +59,10 @@ const enrichItems = async (items, { preservePrice = false } = {}) => {
       );
       if (!variant)
         throw Object.assign(new Error(`Variant (${size}/${color}) not found for "${product.name}"`), { status: 400 });
-      if (variant.stock < qty)
+      if (!skipStockCheck && variant.stock < qty)
         throw Object.assign(new Error(`Insufficient stock for "${product.name}" [${size}/${color}]`), { status: 400 });
     } else {
-      if (product.stock < qty)
+      if (!skipStockCheck && product.stock < qty)
         throw Object.assign(new Error(`Insufficient stock for "${product.name}"`), { status: 400 });
     }
 
@@ -63,6 +87,9 @@ const enrichItems = async (items, { preservePrice = false } = {}) => {
       profit,
       selectedSize:  size,
       selectedColor: color,
+      sku:           product.sku     || '',
+      hsnCode:       product.hsnCode || '',
+      unit:          product.unit    || 'pcs',
       // Carry variant tracking flag for deductStock
       _trackVariant: product.trackVariantStock && !!(size || color),
     });
@@ -75,36 +102,70 @@ const enrichItems = async (items, { preservePrice = false } = {}) => {
   return { enrichedItems, totalAmount, totalDiscount, totalProfit };
 };
 
-// ── Atomic stock deduction (runs inside a transaction session) ─────────────────
-const deductStock = async (enrichedItems, session) => {
-  const ops = enrichedItems.map((item) => {
-    if (item._trackVariant) {
-      // Decrement the matching variantStock entry atomically
+// ── Stock movement (the single source of truth for moving Product stock) ──────
+//
+// Root `stock` is the product's total on-hand quantity; `variantStock[]` breaks
+// that same total down per size/colour. They must therefore move TOGETHER: a
+// variant sale decrements the matching variant entry AND root stock in one
+// atomic update, so root never drifts away from sum(variantStock).
+//
+// Every path that moves stock goes through here — deduct, restore, refund,
+// partial refund — which is what keeps deductions and restorations symmetric.
+// Adding a movement path without using this helper is how double-deduction bugs
+// get introduced.
+//
+//   sign = -1 → deduct (guarded: refuses to go negative)
+//   sign = +1 → restore
+const buildStockMovementOps = (items, sign, trackMap = {}) =>
+  items.map((item) => {
+    const size  = item.selectedSize  || '';
+    const color = item.selectedColor || '';
+    const qty   = Number(item.quantity);
+    const delta = sign * qty;
+
+    // Enriched items carry _trackVariant; stored sale items need the lookup.
+    const isVariant = item._trackVariant !== undefined
+      ? item._trackVariant
+      : !!(trackMap[item.product?.toString()] && (size || color));
+
+    // Only deductions need an availability guard
+    const guard = sign < 0 ? { stock: { $gte: qty } } : {};
+
+    if (isVariant) {
       return {
         updateOne: {
           filter: {
             _id: item.product,
-            variantStock: {
-              $elemMatch: {
-                size:  item.selectedSize,
-                color: item.selectedColor,
-                stock: { $gte: item.quantity },
-              },
-            },
+            variantStock: { $elemMatch: { size, color, ...guard } },
+            ...guard,
           },
-          update: { $inc: { 'variantStock.$.stock': -item.quantity } },
+          // Keep the breakdown and the total in lockstep
+          update: { $inc: { 'variantStock.$.stock': delta, stock: delta } },
         },
       };
     }
-    // Standard root-level stock deduction
+
     return {
       updateOne: {
-        filter: { _id: item.product, stock: { $gte: item.quantity } },
-        update: { $inc: { stock: -item.quantity } },
+        filter: { _id: item.product, ...guard },
+        update: { $inc: { stock: delta } },
       },
     };
   });
 
+// Resolve which of these products track variant stock (for stored sale items,
+// which don't carry the _trackVariant flag).
+const getTrackVariantMap = async (items, session) => {
+  const ids = [...new Set(items.map((i) => i.product?.toString()).filter(Boolean))];
+  const products = await Product.find({ _id: { $in: ids } }, null, { session })
+    .select('trackVariantStock')
+    .lean();
+  return Object.fromEntries(products.map((p) => [p._id.toString(), p.trackVariantStock]));
+};
+
+// ── Atomic stock deduction (runs inside a transaction session) ─────────────────
+const deductStock = async (enrichedItems, session) => {
+  const ops = buildStockMovementOps(enrichedItems, -1);
   const result = await Product.bulkWrite(ops, { session, ordered: false });
 
   if (result.modifiedCount < enrichedItems.length) {
@@ -115,10 +176,143 @@ const deductStock = async (enrichedItems, session) => {
   }
 };
 
+// ── Variant-aware stock restore (refunds, abandoned UPI payments) ─────────────
+const restoreStock = async (items, session) => {
+  if (!items?.length) return;
+  const trackMap = await getTrackVariantMap(items, session);
+  const ops = buildStockMovementOps(items, +1, trackMap);
+  if (ops.length) await Product.bulkWrite(ops, { session, ordered: false });
+};
+
+// ── Stock deltas for a bill edit ──────────────────────────────────────────────
+// Compares the stored line items with the incoming ones per
+// product+size+color, then emits one guarded $inc per changed key.
+// Only the difference moves, so a bill that already holds 4 units and drops to
+// 2 returns exactly 2 — the goods are never briefly released and resold.
+const lineKey = (productId, size, color) => `${productId}|${size || ''}|${color || ''}`;
+
+const buildStockDeltaOps = async (oldItems, newItems) => {
+  const qty = new Map(); // key → { productId, size, color, delta, name }
+
+  const bump = (item, sign) => {
+    const productId = item.product?.toString();
+    if (!productId) return;
+    const size  = item.selectedSize  || '';
+    const color = item.selectedColor || '';
+    const key   = lineKey(productId, size, color);
+    const prev  = qty.get(key) || { productId, size, color, delta: 0, name: item.name };
+    prev.delta += sign * Number(item.quantity);
+    qty.set(key, prev);
+  };
+
+  oldItems.forEach((i) => bump(i, -1)); // giving back what the bill held
+  newItems.forEach((i) => bump(i, +1)); // taking what it now needs
+
+  const changed = [...qty.values()].filter((e) => Math.abs(e.delta) > 1e-9);
+  if (!changed.length) return { ops: [], insufficient: [] };
+
+  const ids      = [...new Set(changed.map((e) => e.productId))];
+  const products = await Product.find({ _id: { $in: ids } })
+    .select('name stock trackVariantStock variantStock')
+    .lean();
+  const pMap     = Object.fromEntries(products.map((p) => [p._id.toString(), p]));
+
+  const ops          = [];
+  const insufficient = [];
+
+  for (const entry of changed) {
+    const product = pMap[entry.productId];
+    if (!product) {
+      insufficient.push(entry.name || entry.productId);
+      continue;
+    }
+
+    const isVariant = product.trackVariantStock && (entry.size || entry.color);
+    // delta > 0 → the bill needs MORE stock, so check availability up front
+    if (entry.delta > 0) {
+      const available = isVariant
+        ? (product.variantStock || []).find((v) => v.size === entry.size && v.color === entry.color)?.stock ?? 0
+        : product.stock;
+      if (available < entry.delta) {
+        insufficient.push(`${product.name} (need ${entry.delta}, have ${available})`);
+        continue;
+      }
+    }
+
+    if (isVariant) {
+      ops.push({
+        updateOne: {
+          filter: {
+            _id: entry.productId,
+            variantStock: {
+              $elemMatch: {
+                size:  entry.size,
+                color: entry.color,
+                ...(entry.delta > 0 ? { stock: { $gte: entry.delta } } : {}),
+              },
+            },
+            ...(entry.delta > 0 ? { stock: { $gte: entry.delta } } : {}),
+          },
+          // Root and variant move together — same rule as buildStockMovementOps
+          update: { $inc: { 'variantStock.$.stock': -entry.delta, stock: -entry.delta } },
+        },
+      });
+    } else {
+      ops.push({
+        updateOne: {
+          filter: {
+            _id: entry.productId,
+            ...(entry.delta > 0 ? { stock: { $gte: entry.delta } } : {}),
+          },
+          update: { $inc: { stock: -entry.delta } },
+        },
+      });
+    }
+  }
+
+  return { ops, insufficient };
+};
+
+// ── Human-readable diff for the audit trail ───────────────────────────────────
+const describeChanges = (sale, newItems, { newTaxRate, newMethod, newTotal }) => {
+  const changes = [];
+  const label   = (i) => [i.name, i.selectedSize, i.selectedColor].filter(Boolean).join(' ');
+
+  const oldMap = new Map(sale.items.map((i) => [lineKey(i.product?.toString(), i.selectedSize, i.selectedColor), i]));
+  const newMap = new Map(newItems.map((i) => [lineKey(i.product?.toString(), i.selectedSize, i.selectedColor), i]));
+
+  for (const [key, oldItem] of oldMap) {
+    const newItem = newMap.get(key);
+    if (!newItem) {
+      changes.push(`Removed ${label(oldItem)} (was ×${oldItem.quantity})`);
+      continue;
+    }
+    if (Number(oldItem.quantity) !== Number(newItem.quantity))
+      changes.push(`${label(oldItem)}: qty ${oldItem.quantity} → ${newItem.quantity}`);
+    if (+Number(oldItem.price).toFixed(2) !== +Number(newItem.price).toFixed(2))
+      changes.push(`${label(oldItem)}: price ₹${oldItem.price} → ₹${newItem.price}`);
+    if (+Number(oldItem.discount || 0).toFixed(2) !== +Number(newItem.discount || 0).toFixed(2))
+      changes.push(`${label(oldItem)}: discount ${oldItem.discount || 0}% → ${newItem.discount || 0}%`);
+  }
+
+  for (const [key, newItem] of newMap) {
+    if (!oldMap.has(key)) changes.push(`Added ${label(newItem)} ×${newItem.quantity}`);
+  }
+
+  if (Number(sale.taxRate) !== Number(newTaxRate))
+    changes.push(`Tax ${sale.taxRate}% → ${newTaxRate}%`);
+  if (sale.paymentMethod !== newMethod)
+    changes.push(`Payment ${sale.paymentMethod} → ${newMethod}`);
+  if (+sale.totalAmount.toFixed(2) !== +newTotal.toFixed(2))
+    changes.push(`Total ₹${sale.totalAmount.toFixed(2)} → ₹${newTotal.toFixed(2)}`);
+
+  return changes.length ? changes : ['No line changes recorded'];
+};
+
 // ── Admin (staff) sale ────────────────────────────────────────────────────────
 const createSale = async (user, data) => {
   const { shopId, items, customerId, paymentMethod, payments, notes, taxRate = 0,
-          isPrivate = false, dueAmount = 0, offlineId } = data;
+          isPrivate = false, dueAmount = 0, offlineId, upiQr = false } = data;
 
   if (!items?.length) throw Object.assign(new Error('No items in sale'), { status: 400 });
 
@@ -150,13 +344,87 @@ const createSale = async (user, data) => {
   let resolvedMethod = paymentMethod || 'cash';
   let resolvedPayments = [];
   if (Array.isArray(payments) && payments.length > 0) {
-    resolvedPayments = payments.filter((p) => p.amount > 0);
+    // ── Split payment validation ──────────────────────────────────────────────
+    // Validate BEFORE filtering: the old code silently dropped any entry with
+    // amount <= 0, so a zero or negative tender was accepted and the recorded
+    // payments no longer explained the bill total.
+    payments.forEach((p, i) => {
+      const amt = Number(p.amount);
+      if (!Number.isFinite(amt))
+        throw Object.assign(new Error(`Payment ${i + 1} has an invalid amount`), { status: 400 });
+      if (amt <= 0)
+        throw Object.assign(
+          new Error(`Payment ${i + 1} (${p.method}) must be greater than ₹0 — got ₹${amt}`),
+          { status: 400 }
+        );
+    });
+
+    const tendered = +payments.reduce((sum, p) => sum + Number(p.amount), 0).toFixed(2);
+    // Allow a 1 paisa rounding tolerance, nothing more.
+    if (Math.abs(tendered - finalTotal) > 0.01) {
+      const diff = +(tendered - finalTotal).toFixed(2);
+      throw Object.assign(
+        new Error(
+          `Split payment mismatch: tendered ₹${tendered.toFixed(2)} does not match the bill total ` +
+          `₹${finalTotal.toFixed(2)} (${diff > 0 ? `₹${diff.toFixed(2)} over` : `₹${Math.abs(diff).toFixed(2)} short`})`
+        ),
+        { status: 400 }
+      );
+    }
+
+    resolvedPayments = payments.map((p) => ({ method: p.method, amount: Number(p.amount) }));
     const largest = resolvedPayments.reduce((a, b) => (b.amount > a.amount ? b : a), resolvedPayments[0]);
     resolvedMethod = largest?.method || 'cash';
   }
 
   // Strip internal _trackVariant flag before persisting
   const saleItems = enrichedItems.map(({ _trackVariant, ...rest }) => rest);
+
+  // ── UPI QR sales start unsettled ────────────────────────────────────────────
+  // Stock is still deducted up front so the goods can't be double-sold while
+  // the customer is paying, but the bill stays 'pending' (and therefore out of
+  // all revenue reports, which filter on status:'completed') until a
+  // transaction reference is recorded via verifyUpiPayment.
+  const isUpiQrSale = !!upiQr && resolvedMethod === 'upi';
+  const upiRefId    = isUpiQrSale ? `UPI${Date.now().toString(36).toUpperCase()}${Math.floor(Math.random() * 1e4)}` : '';
+  const shopUpi     = isUpiQrSale
+    ? await Shop.findById(shopId).select('upiSettings name').lean()
+    : null;
+
+  if (isUpiQrSale) {
+    if (!shopUpi?.upiSettings?.enabled || !isValidVpa(shopUpi.upiSettings.vpa)) {
+      throw Object.assign(
+        new Error('UPI QR is not configured for this shop — set it up in Settings → Payments'),
+        { status: 400 }
+      );
+    }
+  }
+
+  // ── Credit limit ────────────────────────────────────────────────────────────
+  // Checked before the transaction opens so a rejected sale leaves stock and the
+  // customer's balance completely untouched. creditLimit 0 means unlimited.
+  if (resolvedMethod === 'credit' && customerId) {
+    const customer = await Customer.findById(customerId).select('name creditBalance creditLimit').lean();
+    if (!customer) throw Object.assign(new Error('Customer not found'), { status: 400 });
+
+    const limit = Number(customer.creditLimit) || 0;
+    if (limit > 0) {
+      const owed     = Number(customer.creditBalance) || 0;
+      const newDue   = Math.min(finalTotal, Math.max(0, Number(dueAmount) || 0)) || finalTotal;
+      const proposed = +(owed + newDue).toFixed(2);
+
+      if (proposed > limit + 0.01) {
+        throw Object.assign(
+          new Error(
+            `Credit limit exceeded for ${customer.name}: outstanding ₹${owed.toFixed(2)} ` +
+            `+ ₹${newDue.toFixed(2)} = ₹${proposed.toFixed(2)} exceeds the ₹${limit.toFixed(2)} limit ` +
+            `(₹${Math.max(0, limit - owed).toFixed(2)} available)`
+          ),
+          { status: 400 }
+        );
+      }
+    }
+  }
 
   const session = await mongoose.startSession();
   let sale;
@@ -181,14 +449,26 @@ const createSale = async (user, data) => {
         ownerId,
         staffId:    user._id,
         notes,
-        status:     'completed',
+        status:        isUpiQrSale ? 'pending' : 'completed',
+        paymentStatus: isUpiQrSale ? 'pending' : 'paid',
+        isUpiQr:       isUpiQrSale,
+        ...(isUpiQrSale ? {
+          upiTxn: {
+            refId:         upiRefId,
+            vpa:           shopUpi.upiSettings.vpa,
+            amount:        finalTotal,
+            qrGeneratedAt: new Date(),
+          },
+        } : {}),
         isPrivate:  !!isPrivate,
         dueAmount:  resolvedMethod === 'credit' ? Math.max(0, Number(dueAmount) || 0) : 0,
         // Persist the client-side UUID so we can detect duplicate sync retries
         ...(offlineId ? { offlineId } : {}),
       }], { session });
 
-      if (customerId) {
+      // Customer spend and credit ledger are applied at verification time for
+      // UPI QR bills — nothing is owed or spent until the money actually lands.
+      if (customerId && !isUpiQrSale) {
         await Customer.findByIdAndUpdate(
           customerId,
           {
@@ -200,8 +480,14 @@ const createSale = async (user, data) => {
       }
 
       // ── Credit ledger entry ──────────────────────────────────────────────────
-      if (resolvedMethod === 'credit' && customerId) {
-        const creditAmt = resolvedPayments.find((p) => p.method === 'credit')?.amount ?? finalTotal;
+      if (resolvedMethod === 'credit' && customerId && !isUpiQrSale) {
+        // Record what is actually deferred. A split tender names the credit
+        // portion explicitly; otherwise honour dueAmount, falling back to the
+        // whole bill. Using finalTotal when dueAmount is smaller overstated the
+        // customer's debt (and disagreed with verifyUpiPayment).
+        const explicitDue = Math.min(finalTotal, Number(dueAmount) || 0);
+        const creditAmt   = resolvedPayments.find((p) => p.method === 'credit')?.amount
+          ?? (explicitDue > 0 ? explicitDue : finalTotal);
         await ledgerService.recordCredit({
           customerId,
           shopId,
@@ -338,7 +624,8 @@ const getSaleById = async (id, user) => {
   const sale = await Sale.findById(id)
     .populate('customerId', 'name phone email')
     .populate('staffId', 'name')
-    .populate('shopId', 'name address phone currency logo gstNumber')
+    .populate('lastEditedBy', 'name role')
+    .populate('shopId', 'name address phone currency logo gstNumber taxRate upiSettings')
     .populate('items.product', 'name barcode sku');
 
   if (!sale) throw Object.assign(new Error('Sale not found'), { status: 404 });
@@ -359,13 +646,11 @@ const refundSale = async (id, user) => {
 
   try {
     await session.withTransaction(async () => {
-      // Restore stock and mark refunded in one atomic transaction
-      await Product.bulkWrite(
-        sale.items.map((item) => ({
-          updateOne: { filter: { _id: item.product }, update: { $inc: { stock: item.quantity } } },
-        })),
-        { session, ordered: false }
-      );
+      // Restore stock and mark refunded in one atomic transaction.
+      // Goes through restoreStock so variant products get BOTH their variant
+      // entry and root stock returned — the old inline bulkWrite only touched
+      // root, permanently under-reporting variant stock after a refund.
+      await restoreStock(sale.items, session);
 
       refunded = await Sale.findByIdAndUpdate(
         id,
@@ -403,7 +688,9 @@ const partialRefund = async (id, user, refundItems) => {
     refundItems.map((r) => [r.productId?.toString(), Number(r.quantity)])
   );
 
-  const stockOps = [];
+  // Items to give back, described the same way a sale item is, so the shared
+  // movement helper can restore variant + root stock together.
+  const itemsToRestore = [];
   let refundAmount = 0;
 
   for (const item of sale.items) {
@@ -418,15 +705,18 @@ const partialRefund = async (id, user, refundItems) => {
         { status: 400 }
       );
 
-    stockOps.push({
-      updateOne: { filter: { _id: item.product }, update: { $inc: { stock: refundQty } } },
+    itemsToRestore.push({
+      product:       item.product,
+      selectedSize:  item.selectedSize,
+      selectedColor: item.selectedColor,
+      quantity:      refundQty,
     });
 
     refundAmount += (item.subtotal / item.quantity) * refundQty;
     item.refundedQty = (item.refundedQty || 0) + refundQty;
   }
 
-  if (stockOps.length === 0)
+  if (itemsToRestore.length === 0)
     throw Object.assign(new Error('No matching items found to refund'), { status: 400 });
 
   // Check if all quantities are now fully refunded → mark as refunded
@@ -439,7 +729,7 @@ const partialRefund = async (id, user, refundItems) => {
 
   try {
     await session.withTransaction(async () => {
-      await Product.bulkWrite(stockOps, { session, ordered: false });
+      await restoreStock(itemsToRestore, session);
 
       updated = await Sale.findByIdAndUpdate(
         id,
@@ -456,6 +746,378 @@ const partialRefund = async (id, user, refundItems) => {
 
   cache.del(`dashboard:${sale.shopId.toString()}`);
   return { sale: updated, refundAmount: +refundAmount.toFixed(2), fullyRefunded: allRefunded };
+};
+
+// ── UPI QR: confirm the money actually arrived ─────────────────────────────────
+// Requires a transaction reference (UTR) the cashier has read off the customer's
+// payment confirmation. A bare click can never settle a bill: no reference,
+// no 'paid'. Once verified the bill becomes 'completed' and only then do the
+// customer's spend totals and any credit ledger entry get applied.
+const verifyUpiPayment = async (id, user, { transactionId, amountReceived } = {}) => {
+  if (!isValidTxnRef(transactionId || '')) {
+    throw Object.assign(
+      new Error('A valid UPI transaction / UTR reference is required to confirm payment'),
+      { status: 400 }
+    );
+  }
+
+  const sale = await Sale.findById(id);
+  if (!sale) throw Object.assign(new Error('Sale not found'), { status: 404 });
+  if (user.role !== 'super_admin' && !user.shops.some((s) => s.toString() === sale.shopId.toString()))
+    throw Object.assign(new Error('Access denied'), { status: 403 });
+  if (!sale.isUpiQr)
+    throw Object.assign(new Error('This bill was not paid by UPI QR'), { status: 400 });
+  if (sale.paymentStatus === 'paid')
+    throw Object.assign(new Error('This bill is already marked as paid'), { status: 400 });
+  if (sale.paymentStatus !== 'pending')
+    throw Object.assign(new Error(`Cannot verify a ${sale.paymentStatus} payment`), { status: 400 });
+
+  const ref = transactionId.trim();
+
+  // Guard against the same UTR being reused across bills
+  const dupe = await Sale.findOne({
+    _id:                    { $ne: sale._id },
+    shopId:                 sale.shopId,
+    'upiTxn.transactionId': ref,
+  }).select('invoiceNumber').lean();
+  if (dupe) {
+    throw Object.assign(
+      new Error(`Transaction ${ref} is already recorded against bill ${dupe.invoiceNumber}`),
+      { status: 409 }
+    );
+  }
+
+  const session = await mongoose.startSession();
+  let updated;
+
+  try {
+    await session.withTransaction(async () => {
+      updated = await Sale.findByIdAndUpdate(
+        id,
+        {
+          $set: {
+            status:                 'completed',
+            paymentStatus:          'paid',
+            'upiTxn.transactionId': ref,
+            'upiTxn.verifiedAt':    new Date(),
+            'upiTxn.verifiedBy':    user._id,
+            ...(Number(amountReceived) > 0 ? { 'upiTxn.amount': Number(amountReceived) } : {}),
+          },
+        },
+        { new: true, session }
+      );
+
+      // Deferred from createSale — apply now that the payment is real
+      if (sale.customerId) {
+        await Customer.findByIdAndUpdate(
+          sale.customerId,
+          {
+            $inc:  { totalPurchases: 1, totalSpent: sale.totalAmount },
+            $push: { purchaseHistory: { saleId: sale._id, amount: sale.totalAmount, date: sale.createdAt } },
+          },
+          { session }
+        );
+      }
+
+      if (sale.paymentMethod === 'credit' && sale.customerId) {
+        await ledgerService.recordCredit({
+          customerId: sale.customerId,
+          shopId:     sale.shopId,
+          saleId:     sale._id,
+          amount:     sale.dueAmount || sale.totalAmount,
+          notes:      sale.notes || '',
+          recordedBy: user._id,
+        }, session);
+      }
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  cache.del(`dashboard:${sale.shopId.toString()}`);
+
+  await updated.populate(['customerId', 'staffId', { path: 'shopId', select: 'name address phone currency taxRate logo gstNumber upiSettings' }]);
+  return updated;
+};
+
+// ── UPI QR: payment failed or was abandoned ───────────────────────────────────
+// Restores the stock that createSale had reserved and parks the bill as
+// 'cancelled', which keeps it out of every revenue report while leaving a
+// record of the attempt.
+const cancelUpiPayment = async (id, user, { paymentStatus = 'cancelled', reason = '' } = {}) => {
+  if (!['failed', 'cancelled'].includes(paymentStatus))
+    throw Object.assign(new Error("paymentStatus must be 'failed' or 'cancelled'"), { status: 400 });
+
+  const sale = await Sale.findById(id);
+  if (!sale) throw Object.assign(new Error('Sale not found'), { status: 404 });
+  if (user.role !== 'super_admin' && !user.shops.some((s) => s.toString() === sale.shopId.toString()))
+    throw Object.assign(new Error('Access denied'), { status: 403 });
+  if (!sale.isUpiQr)
+    throw Object.assign(new Error('This bill was not paid by UPI QR'), { status: 400 });
+  if (sale.paymentStatus === 'paid')
+    throw Object.assign(
+      new Error('This payment is already verified — use refund instead'),
+      { status: 400 }
+    );
+  if (sale.paymentStatus !== 'pending')
+    throw Object.assign(new Error(`Payment is already ${sale.paymentStatus}`), { status: 400 });
+
+  const session = await mongoose.startSession();
+  let updated;
+
+  try {
+    await session.withTransaction(async () => {
+      await restoreStock(sale.items, session);
+
+      updated = await Sale.findByIdAndUpdate(
+        id,
+        {
+          $set: {
+            status:                 'cancelled',
+            paymentStatus,
+            'upiTxn.failureReason': String(reason || '').slice(0, 300),
+          },
+        },
+        { new: true, session }
+      );
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  cache.del(`dashboard:${sale.shopId.toString()}`);
+  stockService.bulkUpdateFromRefund({ items: sale.items, shopId: sale.shopId.toString() }).catch((err) => {
+    console.error('[StockSnapshot] cancelUpiPayment restore failed:', err.message);
+  });
+
+  return updated;
+};
+
+// ── Edit a completed bill ─────────────────────────────────────────────────────
+// Applies stock changes as deltas (never restore-then-rededuct, which would
+// briefly oversell), recalculates every total, corrects the customer's spend
+// and credit position, and appends an audit entry recording who changed what
+// and why. Runs entirely inside one transaction.
+const updateSale = async (id, user, data) => {
+  const { items, customerId, paymentMethod, taxRate, notes, isPrivate, dueAmount, reason } = data;
+
+  if (!String(reason || '').trim() || String(reason).trim().length < 3)
+    throw Object.assign(new Error('A reason for the modification is required'), { status: 400 });
+  if (!items?.length)
+    throw Object.assign(new Error('A bill must have at least one item'), { status: 400 });
+
+  const sale = await Sale.findById(id);
+  if (!sale) throw Object.assign(new Error('Sale not found'), { status: 404 });
+  if (user.role !== 'super_admin' && !user.shops.some((s) => s.toString() === sale.shopId.toString()))
+    throw Object.assign(new Error('Access denied'), { status: 403 });
+
+  // ── Guards: only a settled, untouched bill can be amended ──────────────────
+  if (sale.status !== 'completed')
+    throw Object.assign(
+      new Error(`Only completed bills can be edited — this bill is ${sale.status}`),
+      { status: 400 }
+    );
+  if (sale.paymentStatus !== 'paid')
+    throw Object.assign(
+      new Error('Payment must be verified before this bill can be edited'),
+      { status: 400 }
+    );
+  if (sale.items.some((i) => (i.refundedQty || 0) > 0))
+    throw Object.assign(
+      new Error('This bill has refunded items — edit is blocked, use a refund instead'),
+      { status: 400 }
+    );
+  if (sale.isOnlineOrder)
+    throw Object.assign(new Error('Online orders cannot be edited here'), { status: 400 });
+
+  // ── Recalculate from scratch ────────────────────────────────────────────────
+  const newTaxRate = taxRate === undefined ? sale.taxRate : Number(taxRate);
+  if (!Number.isFinite(newTaxRate) || newTaxRate < 0 || newTaxRate > 100)
+    throw Object.assign(new Error('taxRate must be between 0 and 100'), { status: 400 });
+
+  // preservePrice keeps the price the cashier typed rather than snapping back
+  // to the current catalogue price.
+  const { enrichedItems, totalAmount, totalDiscount, totalProfit } =
+    await enrichItems(items, { preservePrice: true, skipStockCheck: true, skipExpiryCheck: true });
+
+  const newTaxAmount = +(totalAmount * (newTaxRate / 100)).toFixed(2);
+  const newTotal     = +(totalAmount + newTaxAmount).toFixed(2);
+  const oldTotal     = sale.totalAmount;
+
+  const newMethod    = paymentMethod || sale.paymentMethod;
+  const newCustomer  = customerId === undefined
+    ? (sale.customerId ? sale.customerId.toString() : null)
+    : (customerId || null);
+  const oldCustomer  = sale.customerId ? sale.customerId.toString() : null;
+
+  if (newMethod === 'credit' && !newCustomer)
+    throw Object.assign(new Error('A customer is required for a credit bill'), { status: 400 });
+
+  const newDue = newMethod === 'credit'
+    ? Math.min(newTotal, Math.max(0, Number(dueAmount ?? sale.dueAmount) || 0))
+    : 0;
+
+  // ── Stock deltas ───────────────────────────────────────────────────────────
+  const { ops: stockOps, insufficient } = await buildStockDeltaOps(sale.items, enrichedItems);
+  if (insufficient.length)
+    throw Object.assign(
+      new Error(`Insufficient stock to increase: ${insufficient.join(', ')}`),
+      { status: 409 }
+    );
+
+  const changes    = describeChanges(sale, enrichedItems, { newTaxRate, newMethod, newTotal });
+  const saleItems  = enrichedItems.map(({ _trackVariant, ...rest }) => rest);
+  const oldItems   = sale.items.map((i) => i.toObject ? i.toObject() : i);
+
+  const session = await mongoose.startSession();
+  let updated;
+
+  try {
+    await session.withTransaction(async () => {
+      if (stockOps.length) {
+        const result = await Product.bulkWrite(stockOps, { session, ordered: false });
+        if (result.modifiedCount < stockOps.length)
+          throw Object.assign(
+            new Error('Stock changed while saving — please reopen the bill and retry'),
+            { status: 409 }
+          );
+      }
+
+      updated = await Sale.findByIdAndUpdate(
+        id,
+        {
+          $set: {
+            items:         saleItems,
+            totalAmount:   newTotal,
+            totalDiscount,
+            totalProfit,
+            taxAmount:     newTaxAmount,
+            taxRate:       newTaxRate,
+            paymentMethod: newMethod,
+            customerId:    newCustomer,
+            dueAmount:     newDue,
+            ...(notes     !== undefined ? { notes }                : {}),
+            ...(isPrivate !== undefined ? { isPrivate: !!isPrivate } : {}),
+            lastEditedAt:  new Date(),
+            lastEditedBy:  user._id,
+          },
+          $inc:  { editCount: 1 },
+          $push: {
+            editHistory: {
+              editedBy:     user._id,
+              editedByName: user.name || '',
+              editedByRole: user.role || '',
+              editedAt:     new Date(),
+              reason:       String(reason).trim().slice(0, 300),
+              before: {
+                totalAmount:   oldTotal,
+                taxAmount:     sale.taxAmount,
+                taxRate:       sale.taxRate,
+                totalDiscount: sale.totalDiscount,
+                itemCount:     sale.items.length,
+                paymentMethod: sale.paymentMethod,
+              },
+              after: {
+                totalAmount:   newTotal,
+                taxAmount:     newTaxAmount,
+                taxRate:       newTaxRate,
+                totalDiscount,
+                itemCount:     saleItems.length,
+                paymentMethod: newMethod,
+              },
+              changes,
+            },
+          },
+        },
+        { new: true, session }
+      );
+
+      // ── Correct customer spend ───────────────────────────────────────────────
+      if (oldCustomer && newCustomer && oldCustomer === newCustomer) {
+        const diff = +(newTotal - oldTotal).toFixed(2);
+        if (diff !== 0) {
+          await Customer.updateOne(
+            { _id: newCustomer },
+            { $inc: { totalSpent: diff } },
+            { session }
+          );
+          await Customer.updateOne(
+            { _id: newCustomer, 'purchaseHistory.saleId': sale._id },
+            { $set: { 'purchaseHistory.$.amount': newTotal } },
+            { session }
+          );
+        }
+      } else {
+        if (oldCustomer) {
+          await Customer.updateOne(
+            { _id: oldCustomer },
+            {
+              $inc:  { totalPurchases: -1, totalSpent: -oldTotal },
+              $pull: { purchaseHistory: { saleId: sale._id } },
+            },
+            { session }
+          );
+        }
+        if (newCustomer) {
+          await Customer.updateOne(
+            { _id: newCustomer },
+            {
+              $inc:  { totalPurchases: 1, totalSpent: newTotal },
+              $push: { purchaseHistory: { saleId: sale._id, amount: newTotal, date: sale.createdAt } },
+            },
+            { session }
+          );
+        }
+      }
+
+      // ── Correct the credit position ──────────────────────────────────────────
+      const oldCredit = sale.paymentMethod === 'credit' ? (sale.dueAmount || oldTotal) : 0;
+      const newCredit = newMethod === 'credit' ? (newDue || newTotal) : 0;
+
+      if (oldCustomer && oldCredit && oldCustomer !== newCustomer) {
+        await ledgerService.recordCreditAdjustment({
+          customerId: oldCustomer,
+          shopId:     sale.shopId,
+          saleId:     sale._id,
+          delta:      -oldCredit,
+          notes:      `Bill ${sale.invoiceNumber} edited — credit moved off this customer`,
+          recordedBy: user._id,
+        }, session);
+      }
+
+      if (newCustomer) {
+        const base  = oldCustomer === newCustomer ? oldCredit : 0;
+        const delta = +(newCredit - base).toFixed(2);
+        if (delta !== 0) {
+          await ledgerService.recordCreditAdjustment({
+            customerId: newCustomer,
+            shopId:     sale.shopId,
+            saleId:     sale._id,
+            delta,
+            notes:      `Bill ${sale.invoiceNumber} edited — ${String(reason).trim().slice(0, 120)}`,
+            recordedBy: user._id,
+          }, session);
+        }
+      }
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  cache.del(`dashboard:${sale.shopId.toString()}`);
+
+  // Resync the fast-read snapshot: reverse the old lines, apply the new ones.
+  stockService.bulkUpdateFromRefund({ items: oldItems, shopId: sale.shopId.toString() })
+    .then(() => stockService.bulkUpdateFromSale({ items: saleItems, shopId: sale.shopId.toString() }))
+    .catch((err) => console.error('[StockSnapshot] updateSale resync failed:', err.message));
+
+  await updated.populate([
+    'customerId',
+    'staffId',
+    'lastEditedBy',
+    { path: 'shopId', select: 'name address phone currency taxRate logo gstNumber' },
+  ]);
+  return updated;
 };
 
 // ── Bulk sync — processes offline sales sequentially (FIFO) ──────────────────
@@ -501,4 +1163,8 @@ const bulkSyncSales = async (user, salesArray) => {
   return results;
 };
 
-module.exports = { createSale, createPublicSale, getSales, getSaleById, refundSale, partialRefund, bulkSyncSales };
+module.exports = {
+  createSale, createPublicSale, getSales, getSaleById,
+  refundSale, partialRefund, bulkSyncSales,
+  verifyUpiPayment, cancelUpiPayment, updateSale,
+};

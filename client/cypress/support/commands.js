@@ -25,7 +25,7 @@ Cypress.Commands.add('login', (
   password = Cypress.env('ownerPassword'),
 ) => {
   cy.session(
-    [email, password],
+    [email, password, 'v2'],
     () => {
       // Step 1: get the JWT via API (faster + more reliable than UI login)
       cy.request({
@@ -42,13 +42,50 @@ Cypress.Commands.add('login', (
         const { token, user } = res.body.data;
         expect(token).to.be.a('string', 'Login response did not include a token');
 
-        // Step 2: visit the app to establish the http://localhost:4000 origin
+        // Step 2: visit the app to establish the origin
         cy.visit('/');
 
         // Step 3: set localStorage IN THE APP WINDOW (not the Cypress runner window)
         cy.window().then((win) => {
           win.localStorage.setItem('ms_token', token);
           if (user) win.localStorage.setItem('user', JSON.stringify(user));
+          
+          // Disable tour guide and onboarding welcome modals during automated testing
+          win.localStorage.setItem('multishop_has_seen_tour_v1', 'true');
+          win.localStorage.setItem('ms-setup-v1', JSON.stringify({
+            state: {
+              hasProducts: true,
+              hasCustomers: true,
+              hasSales: true,
+              modalDismissed: true,
+              isDemoMode: false
+            },
+            version: 1
+          }));
+          
+          cy.task('log', `[cy.login] Set ms_token in localStorage: ${token.substring(0, 15)}...`);
+        });
+
+        cy.intercept('**/auth/me').as('getMe');
+
+        // Step 3.5: hard reload the page so the app bundle re-initializes and reads the token from localStorage
+        cy.reload();
+
+        cy.window().then((win) => {
+          const storedToken = win.localStorage.getItem('ms_token');
+          cy.task('log', `[cy.login] After reload, ms_token in localStorage is: ${storedToken ? storedToken.substring(0, 15) + '...' : 'null'}`);
+        });
+
+        cy.wait('@getMe', { timeout: 12000, failOnStatusCode: false }).then((interception) => {
+          if (!interception) {
+            cy.task('log', '[cy.login] Intercept @getMe was not triggered!');
+          } else {
+            cy.task('log', `[cy.login] getMe URL: ${interception.request.url}`);
+            cy.task('log', `[cy.login] getMe status: ${interception.response?.statusCode}`);
+            if (interception.response?.body) {
+              cy.task('log', `[cy.login] getMe response body: ${JSON.stringify(interception.response.body).substring(0, 100)}`);
+            }
+          }
         });
 
         // Step 4: wait for the app to react to the token and redirect to dashboard
@@ -62,7 +99,8 @@ Cypress.Commands.add('login', (
       // If the token is gone (e.g. after cy.clearLocalStorage), re-login.
       validate() {
         cy.getAllLocalStorage().then((storage) => {
-          const token = (storage['http://localhost:4000'] || {}).ms_token;
+          const origin = Cypress.config('baseUrl');
+          const token = (storage[origin] || {}).ms_token;
           expect(token).to.be.a('string', 'Cached session token missing — re-logging in');
         });
       },
@@ -86,7 +124,8 @@ Cypress.Commands.add('login', (
 Cypress.Commands.add('apiRequest', (method, path, body = null) => {
   return cy.getAllLocalStorage().then((storage) => {
     // Key is the app origin — must match baseUrl exactly
-    const appStorage = storage['http://localhost:4000'] || {};
+    const origin     = Cypress.config('baseUrl');
+    const appStorage = storage[origin] || {};
     const token      = appStorage.ms_token;
 
     return cy.request({
@@ -109,7 +148,8 @@ Cypress.Commands.add('getShopId', () => {
       200,
       `GET /shops failed with ${res.status} — is the backend running on port 5001?`,
     );
-    const id = res.body.data?.[0]?._id;
+    const shops = Array.isArray(res.body.data) ? res.body.data : res.body.data?.shops;
+    const id = shops?.[0]?._id;
     expect(id).to.be.a(
       'string',
       'No shops in the database — create at least one shop via the app before running tests',
@@ -142,7 +182,23 @@ Cypress.Commands.add('seedProduct', (overrides = {}) => {
 
 // ── cy.goToBilling() ─────────────────────────────────────────────────────────
 Cypress.Commands.add('goToBilling', () => {
+  cy.intercept('**/shops').as('getShops');
   cy.visit('/billing');
+  cy.url().then((url) => {
+    cy.task('log', `[goToBilling] Visited /billing. Current URL: ${url}`);
+  });
+  cy.window().then((win) => {
+    const token = win.localStorage.getItem('ms_token');
+    const user = win.localStorage.getItem('user');
+    cy.task('log', `[goToBilling] localStorage token: ${token ? token.substring(0, 15) + '...' : 'null'}, user: ${user ? 'present' : 'null'}`);
+  });
+
+  // Do NOT hard-wait on @getShops. React Query caches the shops list, so on a
+  // restored session no /shops request fires at all and cy.wait() fails the
+  // whole spec in beforeEach. Wait on the thing we actually care about — the POS
+  // being interactive — which is true whether shops came from cache or network.
+  cy.get('[data-testid="product-search"]', { timeout: 20000 }).should('be.visible');
+
   cy.get('[data-testid="product-search"]', { timeout: 12000 }).should('be.visible');
 });
 
@@ -155,6 +211,7 @@ Cypress.Commands.add('waitForProducts', () => {
 // ── cy.addProductToCart() ────────────────────────────────────────────────────
 Cypress.Commands.add('addProductToCart', (searchTerm) => {
   cy.get('[data-testid="product-search"]').clear().type(searchTerm);
+  cy.wait(500); // Wait for search query debounce and API fetch to stabilize
   cy.get('[data-testid^="product-card-"]', { timeout: 10000 })
     .filter(':not([data-out-of-stock="true"])')
     .first()
@@ -189,3 +246,14 @@ Cypress.Commands.add('closeInvoice', () => {
 Cypress.Commands.add('selectShop', (shopName) => {
   cy.contains('button', shopName, { timeout: 6000 }).click();
 });
+
+// ── Response-shape unwrappers ────────────────────────────────────────────────
+// The API is not uniform: list endpoints return { data: [...] } via paginated()
+// while single-resource endpoints return { data: { product } } via success().
+// Specs that guessed wrong read `undefined` and failed with confusing messages,
+// so unwrap through these helpers instead of indexing res.body.data directly.
+Cypress.unwrapShops    = (res) =>
+  (Array.isArray(res.body?.data) ? res.body.data : res.body?.data?.shops) || [];
+Cypress.unwrapProduct  = (res) => res.body?.data?.product  || res.body?.data || {};
+Cypress.unwrapCustomer = (res) => res.body?.data?.customer || res.body?.data || {};
+Cypress.unwrapSale     = (res) => res.body?.data?.sale     || res.body?.data || {};

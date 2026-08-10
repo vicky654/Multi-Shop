@@ -37,6 +37,7 @@ const ALLOWED_ORIGINS = [
   'http://localhost:4000',
   'http://localhost:3000',
   'http://localhost:5001',
+  'http://127.0.0.1:4000',
   'https://multishop-backend-9jbg.onrender.com',
   'https://multi-shop-tawny.vercel.app',
   // Production frontends — add your Vercel / Netlify URL in CLIENT_URL env var
@@ -90,6 +91,14 @@ app.use('/api/insights',      insightsRoutes);
 app.use('/api/inventory',     inventoryRoutes);
 app.use('/api/credit-ledger',    creditLedgerRoutes);
 app.use('/api/erp-automations', erpAutomationRoutes);
+
+// ── Test-only routes ──────────────────────────────────────────────────────────
+// Never mounted in a production process. Provides /db-info (so the E2E runner
+// can refuse to run against real data) and /purge (auto-cleanup after a run).
+if (process.env.NODE_ENV === 'test' || process.env.USE_TEST_DB === '1') {
+  app.use('/api/test-utils', require('./modules/testUtils/testUtils.routes'));
+  console.log('⚠️  Test utility routes mounted at /api/test-utils');
+}
 
 scheduler.start();
 

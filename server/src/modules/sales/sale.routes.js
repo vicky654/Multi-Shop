@@ -3,7 +3,17 @@ const { body, validationResult } = require('express-validator');
 const ctrl   = require('./sale.controller');
 const { protect }                = require('../../middlewares/auth.middleware');
 const { allowRoles, shopAccess } = require('../../middlewares/role.middleware');
+const { allowPermissions }       = require('../../middlewares/permission.middleware');
 const idempotency                = require('../../middlewares/idempotency.middleware');
+
+// Shared 422 responder for the express-validator chains below
+const handleValidation = (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(422).json({ success: false, errors: errors.array() });
+  }
+  next();
+};
 
 const validateSale = [
   body('shopId').notEmpty().withMessage('shopId is required'),
@@ -51,5 +61,40 @@ router.post('/bulk-sync',
 
 router.patch('/:id/refund',         allowRoles('super_admin', 'owner', 'manager'), ctrl.refund);
 router.patch('/:id/partial-refund', allowRoles('super_admin', 'owner', 'manager'), ctrl.partialRefund);
+
+// ── UPI QR settlement ─────────────────────────────────────────────────────────
+// Any cashier who can take a payment can confirm one, but a transaction
+// reference is mandatory — the service rejects a bare confirmation.
+router.patch('/:id/upi/verify',
+  allowRoles('super_admin', 'owner', 'manager', 'billing_staff'),
+  [
+    body('transactionId').trim().notEmpty().withMessage('transactionId is required'),
+    handleValidation,
+  ],
+  ctrl.verifyUpi
+);
+
+router.patch('/:id/upi/cancel',
+  allowRoles('super_admin', 'owner', 'manager', 'billing_staff'),
+  ctrl.cancelUpi
+);
+
+// ── Edit a completed bill ─────────────────────────────────────────────────────
+// Double-gated: the role must be senior enough AND hold the `edit_sale`
+// permission, so an owner can grant or revoke bill editing independently
+// of refund rights.
+router.patch('/:id',
+  allowRoles('super_admin', 'owner', 'manager'),
+  allowPermissions('edit_sale'),
+  [
+    body('items').isArray({ min: 1 }).withMessage('items must be a non-empty array'),
+    body('items.*.productId').notEmpty().withMessage('Each item must have a productId'),
+    body('items.*.quantity').isFloat({ min: 0.001 }).withMessage('Each item quantity must be > 0'),
+    body('reason').trim().isLength({ min: 3 }).withMessage('A reason (min 3 chars) is required'),
+    body('taxRate').optional().isFloat({ min: 0, max: 100 }).withMessage('taxRate must be 0–100'),
+    handleValidation,
+  ],
+  ctrl.update
+);
 
 module.exports = router;

@@ -1,0 +1,14 @@
+# ── Demo Asset Automation ────────────────────────────────────────────────────
+# Credentials for the demo account. Never commit — .env.demo.example is the
+# committed template.
+.env.demo
+
+# Generated marketing assets and run logs (regenerate with `npm run demo:update`)
+scripts/demo/output/
+client/cypress/demo-output/
+
+# Generated per run by scripts/demo/update.mjs (points the SPA at the demo API)
+client/.env.demo
+
+# ── Node ─────────────────────────────────────────────────────────────────────
+node_modules/
