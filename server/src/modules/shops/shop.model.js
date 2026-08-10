@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { isValidVpa } = require('../../utils/upi');
+const { isValidGstin, stateCodeOf } = require('../../utils/gst');
 
 const shopSchema = new mongoose.Schema(
   {
@@ -18,7 +19,26 @@ const shopSchema = new mongoose.Schema(
     logo: { type: String },
     banner: { type: String },
     currency: { type: String, default: '₹' },
-    taxRate: { type: Number, default: 0 }, // GST %
+    taxRate: { type: Number, default: 0 }, // default GST % for this shop
+
+    // ── GST configuration ────────────────────────────────────────────────────
+    // gstNumber was already selected by sale.service and rendered on invoices
+    // ("GSTIN: {shop.gstNumber}") but did not exist on the schema, so every
+    // invoice printed an undefined GSTIN. Added here with real validation.
+    gstNumber: {
+      type: String, trim: true, uppercase: true, default: '',
+      validate: {
+        validator: (v) => !v || isValidGstin(v),
+        message:   'Invalid GSTIN — must be 15 characters with a valid check digit',
+      },
+    },
+    // 2-digit GSTN state code. Drives CGST+SGST vs IGST. Derived from the GSTIN
+    // when present so the two can never disagree.
+    stateCode: { type: String, trim: true, default: '' },
+    // Whether catalogue prices already include GST.
+    gstMode: { type: String, enum: ['exclusive', 'inclusive'], default: 'exclusive' },
+    invoicePrefix: { type: String, trim: true, default: 'INV' },
+    invoiceRoundOff: { type: Boolean, default: true },
     isActive: { type: Boolean, default: true },
 
     // ── Sale Banner settings ─────────────────────────────────────────────────
@@ -59,6 +79,16 @@ const shopSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Keep stateCode consistent with the GSTIN's embedded state code — a mismatch
+// would silently produce the wrong CGST/SGST vs IGST split.
+shopSchema.pre('save', function (next) {
+  if (this.gstNumber) {
+    const code = stateCodeOf(this.gstNumber);
+    if (code) this.stateCode = code;
+  }
+  next();
+});
 
 // UPI QR cannot be switched on without a payee to send the money to.
 shopSchema.pre('validate', function (next) {

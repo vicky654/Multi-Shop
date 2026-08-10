@@ -97,6 +97,29 @@ const saleSchema = new mongoose.Schema(
     notes:      { type: String },
     taxAmount:  { type: Number, default: 0 },
     taxRate:    { type: Number, default: 0 },       // tax % applied at time of sale
+
+    // ── GST breakdown (computed server-side by utils/gst.computeInvoice) ───────
+    // Snapshotted at sale time so a later change to shop config can never
+    // retroactively alter an issued invoice.
+    gst: {
+      mode:            { type: String, enum: ['exclusive', 'inclusive'], default: 'exclusive' },
+      interState:      { type: Boolean, default: false },
+      sellerGstin:     { type: String, default: '' },
+      customerGstin:   { type: String, default: '' },
+      sellerStateCode: { type: String, default: '' },
+      placeOfSupplyCode: { type: String, default: '' },
+      placeOfSupply:   { type: String, default: '' },
+      taxableAmount:   { type: Number, default: 0 },
+      cgstAmount:      { type: Number, default: 0 },
+      sgstAmount:      { type: Number, default: 0 },
+      igstAmount:      { type: Number, default: 0 },
+      roundOff:        { type: Number, default: 0 },
+      // Set when the shop had no state/GSTIN configured, so the intra-state
+      // fallback was used. Surfaced on the invoice rather than hidden.
+      configWarning:   { type: String, default: '' },
+    },
+    invoiceSeq: { type: Number },
+    invoiceFy:  { type: String, default: '' },
     // 'pending'   — awaiting payment verification (UPI QR) or an online order
     // 'cancelled' — payment failed/cancelled before verification; stock restored
     status:     { type: String, enum: ['completed', 'refunded', 'pending', 'cancelled'], default: 'completed' },
@@ -139,15 +162,12 @@ const saleSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Auto-generate invoice number before save
-saleSchema.pre('save', async function (next) {
-  if (!this.invoiceNumber) {
-    const count = await this.constructor.countDocuments({ shopId: this.shopId });
-    const pad   = String(count + 1).padStart(5, '0');
-    this.invoiceNumber = `INV-${pad}-${Date.now().toString().slice(-4)}`;
-  }
-  next();
-});
+// NOTE: invoice numbers are NOT generated here any more.
+//
+// This hook used to do  then pad the result, which two
+// concurrent sales resolve identically — the unique index then failed one of the
+// sales outright. Numbers are now reserved atomically by
+// invoiceCounter.nextInvoiceNumber() inside the sale transaction.
 
 saleSchema.index({ shopId: 1, createdAt: -1 });
 saleSchema.index({ customerId: 1 });

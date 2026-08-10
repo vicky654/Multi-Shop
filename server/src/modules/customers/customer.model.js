@@ -25,6 +25,10 @@ const customerSchema = new mongoose.Schema(
     // Maximum credit this customer may carry. 0 = unlimited (no ceiling).
     // Enforced in sale.service.createSale before any stock is touched.
     creditLimit:   { type: Number, default: 0, min: 0 },
+    // B2B customers need their GSTIN on the invoice; also determines place of
+    // supply for inter-state sales.
+    gstNumber:     { type: String, trim: true, uppercase: true, default: '' },
+    stateCode:     { type: String, trim: true, default: '' },
     isActive: { type: Boolean, default: true },
     isDemo:   { type: Boolean, default: false },
   },

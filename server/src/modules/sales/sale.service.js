@@ -7,6 +7,8 @@ const cache         = require('../../utils/cache');
 const ledgerService = require('../customers/creditLedger.service');
 const stockService  = require('../inventory/stock.service');
 const { isValidVpa, isValidTxnRef } = require('../../utils/upi');
+const { computeInvoice } = require('../../utils/gst');
+const { nextInvoiceNumber } = require('./invoiceCounter.model');
 
 // ── Build enriched items from raw cart items ──────────────────────────────────
 // preservePrice: when true (offline-synced sales), use item.price if set so
@@ -335,9 +337,63 @@ const createSale = async (user, data) => {
     items,
     { preservePrice: !!offlineId } // honour original sale price for offline-synced sales
   );
-  const taxAmount  = +(totalAmount * (taxRate / 100)).toFixed(2);
-  const finalTotal = +(totalAmount + taxAmount).toFixed(2);
+
+  // ── GST: computed server-side, never trusted from the client ─────────────────
+  // The shop supplies the GST configuration; the customer's GSTIN (if any)
+  // determines place of supply and therefore CGST+SGST vs IGST.
+  const gstShop = await Shop.findById(shopId)
+    .select('gstNumber stateCode gstMode invoicePrefix invoiceRoundOff taxRate name')
+    .lean();
+  if (!gstShop) throw Object.assign(new Error('Shop not found'), { status: 404 });
+
+  const gstCustomer = customerId
+    ? await Customer.findById(customerId).select('gstNumber stateCode').lean()
+    : null;
+
+  const placeOfSupplyCode = gstCustomer?.stateCode || gstShop.stateCode || null;
+
+  // Each line's charged unit price is subtotal/quantity — the discount is already
+  // applied by enrichItems, so it is passed through as the taxable value rather
+  // than re-deriving a percentage (which would double-apply product discounts).
+  const invoice = computeInvoice({
+    lines: enrichedItems.map((i) => ({
+      price:       i.quantity ? i.subtotal / i.quantity : 0,
+      quantity:    i.quantity,
+      discountPct: 0,
+      taxRate,
+      name:        i.name,
+      hsnCode:     i.hsnCode,
+    })),
+    gstMode:  gstShop.gstMode || 'exclusive',
+    sellerStateCode: gstShop.stateCode || null,
+    placeOfSupplyCode,
+    roundOff: gstShop.invoiceRoundOff !== false,
+  });
+
+  const taxAmount  = invoice.totalTax;
+  const finalTotal = invoice.grandTotal;
   const ownerId    = user.role === 'owner' ? user._id : (user.ownerId || user._id);
+
+  // Surfaced on the invoice instead of silently issuing a possibly-wrong split.
+  const gstConfigWarning = !invoice.stateKnown && taxRate > 0
+    ? 'Shop GSTIN/state not configured — tax shown as intra-state (CGST+SGST). Set GSTIN in Settings.'
+    : '';
+
+  const gstBreakdown = {
+    mode:              invoice.gstMode,
+    interState:        invoice.interState,
+    sellerGstin:       gstShop.gstNumber || '',
+    customerGstin:     gstCustomer?.gstNumber || '',
+    sellerStateCode:   invoice.sellerStateCode || '',
+    placeOfSupplyCode: invoice.placeOfSupplyCode || '',
+    placeOfSupply:     invoice.placeOfSupply || '',
+    taxableAmount:     invoice.taxableAmount,
+    cgstAmount:        invoice.cgstAmount,
+    sgstAmount:        invoice.sgstAmount,
+    igstAmount:        invoice.igstAmount,
+    roundOff:          invoice.roundOff,
+    configWarning:     gstConfigWarning,
+  };
 
   // ── Resolve primary payment method (for backward compat) ─────────────────────
   // When payments[] is supplied, derive paymentMethod from largest tender.
@@ -426,6 +482,20 @@ const createSale = async (user, data) => {
     }
   }
 
+  // ── Reserve the invoice number BEFORE the transaction ───────────────────────
+  // Deliberately outside: `withTransaction` retries its callback on transient
+  // errors (write conflict, or the upsert creating the counter collection), and
+  // re-running the reservation inside made a retry consume a second number while
+  // the first was still claimed — surfacing as a duplicate-key 409 and a FAILED
+  // SALE. The counter is atomic on its own, so reserving here is safe.
+  //
+  // Trade-off: a rolled-back sale burns its number, leaving a gap in the series.
+  // A gap is an accounting annotation; a failed sale at the counter is lost
+  // revenue. Gaps are traceable via invoiceSeq, so this is the safer default.
+  const { invoiceNumber, seq, fy } = await nextInvoiceNumber(shopId, {
+    prefix: gstShop.invoicePrefix || 'INV',
+  });
+
   const session = await mongoose.startSession();
   let sale;
 
@@ -436,6 +506,10 @@ const createSale = async (user, data) => {
 
       // Create sale document inside the same transaction
       [sale] = await Sale.create([{
+        invoiceNumber,
+        invoiceSeq: seq,
+        invoiceFy:  fy,
+        gst: gstBreakdown,
         items: saleItems,
         totalAmount: finalTotal,
         totalDiscount,
@@ -940,9 +1014,52 @@ const updateSale = async (id, user, data) => {
   const { enrichedItems, totalAmount, totalDiscount, totalProfit } =
     await enrichItems(items, { preservePrice: true, skipStockCheck: true, skipExpiryCheck: true });
 
-  const newTaxAmount = +(totalAmount * (newTaxRate / 100)).toFixed(2);
-  const newTotal     = +(totalAmount + newTaxAmount).toFixed(2);
+  // Edited bills go through the SAME server-side GST engine as createSale, so an
+  // edit can never produce a differently-computed (or breakdown-less) invoice.
+  const gstShopEdit = await Shop.findById(sale.shopId)
+    .select('gstNumber stateCode gstMode invoiceRoundOff').lean();
+  const gstCustEdit = customerId
+    ? await Customer.findById(customerId).select('gstNumber stateCode').lean()
+    : (sale.customerId
+        ? await Customer.findById(sale.customerId).select('gstNumber stateCode').lean()
+        : null);
+
+  const editInvoice = computeInvoice({
+    lines: enrichedItems.map((i) => ({
+      price:       i.quantity ? i.subtotal / i.quantity : 0,
+      quantity:    i.quantity,
+      discountPct: 0,
+      taxRate:     newTaxRate,
+      name:        i.name,
+      hsnCode:     i.hsnCode,
+    })),
+    gstMode:  gstShopEdit?.gstMode || 'exclusive',
+    sellerStateCode:   gstShopEdit?.stateCode || null,
+    placeOfSupplyCode: gstCustEdit?.stateCode || gstShopEdit?.stateCode || null,
+    roundOff: gstShopEdit?.invoiceRoundOff !== false,
+  });
+
+  const newTaxAmount = editInvoice.totalTax;
+  const newTotal     = editInvoice.grandTotal;
   const oldTotal     = sale.totalAmount;
+
+  const newGst = {
+    mode:              editInvoice.gstMode,
+    interState:        editInvoice.interState,
+    sellerGstin:       gstShopEdit?.gstNumber || '',
+    customerGstin:     gstCustEdit?.gstNumber || '',
+    sellerStateCode:   editInvoice.sellerStateCode || '',
+    placeOfSupplyCode: editInvoice.placeOfSupplyCode || '',
+    placeOfSupply:     editInvoice.placeOfSupply || '',
+    taxableAmount:     editInvoice.taxableAmount,
+    cgstAmount:        editInvoice.cgstAmount,
+    sgstAmount:        editInvoice.sgstAmount,
+    igstAmount:        editInvoice.igstAmount,
+    roundOff:          editInvoice.roundOff,
+    configWarning:     !editInvoice.stateKnown && newTaxRate > 0
+      ? 'Shop GSTIN/state not configured — tax shown as intra-state (CGST+SGST).'
+      : '',
+  };
 
   const newMethod    = paymentMethod || sale.paymentMethod;
   const newCustomer  = customerId === undefined
@@ -993,6 +1110,7 @@ const updateSale = async (id, user, data) => {
             totalProfit,
             taxAmount:     newTaxAmount,
             taxRate:       newTaxRate,
+            gst:           newGst,
             paymentMethod: newMethod,
             customerId:    newCustomer,
             dueAmount:     newDue,

@@ -1,9 +1,19 @@
 const router = require('express').Router();
 const ctrl = require('./report.controller');
 const { protect } = require('../../middlewares/auth.middleware');
-const { allowRoles } = require('../../middlewares/role.middleware');
+const { allowRoles, shopAccess } = require('../../middlewares/role.middleware');
 
 router.use(protect);
+
+// P0 tenant isolation: apply shopAccess to EVERY route in this module.
+// Without it, a caller could pass ?shopId=<another tenant> and the service
+// filters would honour it — the list filters do
+//     filter.shopId = { $in: user.shops };  if (shopId) filter.shopId = shopId;
+// where the second line OVERWRITES the membership restriction, and
+// reports shopFilter() returned { shopId } with no check at all.
+// shopAccess validates query/body/param shopId against req.user.shops
+// (super_admin bypasses, absent shopId falls through to the default filter).
+router.use(shopAccess);
 router.use(allowRoles('super_admin', 'owner', 'manager'));
 
 router.get('/summary',           ctrl.summary);

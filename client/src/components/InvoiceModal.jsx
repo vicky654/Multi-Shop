@@ -284,10 +284,36 @@ export default function InvoiceModal({ sale, onClose, onUpdated }) {
                     <span>-₹{sale.totalDiscount.toFixed(2)}</span>
                   </div>
                 )}
-                {sale.taxAmount > 0 && (
+                {/* Statutory GST breakdown: CGST+SGST intra-state, IGST inter-state */}
+                {sale.gst?.igstAmount > 0 && (
+                  <div className="flex justify-between text-gray-600">
+                    <span>IGST ({sale.taxRate || 0}%)</span>
+                    <span>+₹{sale.gst.igstAmount.toFixed(2)}</span>
+                  </div>
+                )}
+                {sale.gst?.cgstAmount > 0 && (
+                  <>
+                    <div className="flex justify-between text-gray-600">
+                      <span>CGST ({((sale.taxRate || 0) / 2).toFixed(2)}%)</span>
+                      <span>+₹{sale.gst.cgstAmount.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-gray-600">
+                      <span>SGST ({((sale.taxRate || 0) / 2).toFixed(2)}%)</span>
+                      <span>+₹{sale.gst.sgstAmount.toFixed(2)}</span>
+                    </div>
+                  </>
+                )}
+                {/* Sales created before the GST engine have no breakdown stored */}
+                {!sale.gst?.cgstAmount && !sale.gst?.igstAmount && sale.taxAmount > 0 && (
                   <div className="flex justify-between text-gray-600">
                     <span>Tax ({sale.taxRate || 0}%)</span>
                     <span>+₹{sale.taxAmount.toFixed(2)}</span>
+                  </div>
+                )}
+                {!!sale.gst?.roundOff && Math.abs(sale.gst.roundOff) >= 0.01 && (
+                  <div className="flex justify-between text-gray-500 text-xs">
+                    <span>Round off</span>
+                    <span>{sale.gst.roundOff > 0 ? '+' : '−'}₹{Math.abs(sale.gst.roundOff).toFixed(2)}</span>
                   </div>
                 )}
                 <div className="flex justify-between font-bold text-lg text-gray-900 border-t border-gray-300 pt-2 mt-2">
