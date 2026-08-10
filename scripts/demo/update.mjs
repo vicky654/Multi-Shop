@@ -176,7 +176,8 @@ async function main() {
 
   // ── 1. Demo data ───────────────────────────────────────────────────────────
   step(1, TOTAL, 'Reset + seed isolated demo account');
-  run('demo seed', process.execPath, [path.join(DEMO_DIR, 'seed-demo.mjs')], ROOT);
+  // DEMO_SEED_SCRIPT lets a themed demo (e.g. the shoes store) supply its own seeder
+  run('demo seed', process.execPath, [path.join(DEMO_DIR, process.env.DEMO_SEED_SCRIPT || 'seed-demo.mjs')], ROOT);
 
   // ── 2. Boot the app in demo mode ───────────────────────────────────────────
   step(2, TOTAL, 'Booting API + web on demo ports');
@@ -238,12 +239,13 @@ async function main() {
 
   // ── 3. Screenshots ─────────────────────────────────────────────────────────
   step(3, TOTAL, 'Capturing module screenshots');
+  const skipShots = process.env.DEMO_SKIP_SCREENSHOTS === '1';
 
   // Clear stale captures ONCE, here — not via Cypress's trashAssetsBeforeRuns,
   // which would fire again on the video run and delete these screenshots.
   fs.rmSync(path.join(CLIENT_DIR, 'cypress', 'demo-output'), { recursive: true, force: true });
 
-  run('screenshot capture', 'npx',
+  if (!skipShots) run('screenshot capture', 'npx',
     ['cypress', 'run', '--config-file', 'cypress.demo.config.js',
       '--spec', 'cypress/demo/01-screenshots.cy.js'],
     CLIENT_DIR, captureEnv);
@@ -252,7 +254,7 @@ async function main() {
   step(4, TOTAL, 'Recording product tour video (H.264 MP4)');
   run('video capture', 'npx',
     ['cypress', 'run', '--config-file', 'cypress.demo.config.js',
-      '--spec', 'cypress/demo/02-tour.cy.js'],
+      '--spec', process.env.DEMO_TOUR_SPEC || 'cypress/demo/02-tour.cy.js'],
     CLIENT_DIR, captureEnv);
 
   // ── 5. Collect + publish ───────────────────────────────────────────────────

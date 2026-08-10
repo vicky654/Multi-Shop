@@ -12,7 +12,6 @@
  * DEMO_DATABASE_URI and refuse to start unless the database name says "demo".
  */
 import { spawnSync } from 'node:child_process';
-import crypto from 'node:crypto';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { loadDemoEnv, ROOT, step, ok, info } from './lib/env.mjs';
@@ -117,14 +116,17 @@ async function main() {
   await owner.save();
   ok('Demo owner credentials applied from .env.demo');
 
-  // Every other seeded account gets a random password so the documented seed
-  // logins (owner123 / staff123 …) cannot be used against this instance.
+  // Every other seeded account gets the SAME demo password from .env.demo, so all
+  // roles are usable for demos and walkthroughs. The documented seed passwords
+  // (owner123 / staff123 …) are still overwritten, so they cannot be used against
+  // this instance — but the shared secret means one leak exposes every role, which
+  // is acceptable only because this database is disposable and non-production.
   const others = await User.find({ _id: { $ne: owner._id } });
   for (const u of others) {
-    u.password = crypto.randomBytes(24).toString('base64url');
+    u.password = env.DEMO_PASSWORD;
     await u.save();
   }
-  ok(`${others.length} non-demo logins randomised`);
+  ok(`${others.length} other demo logins set to the .env.demo password`);
 
   // Fake company branding across all shops
   const logo = buildLogo(env.DEMO_COMPANY_NAME);
@@ -143,11 +145,59 @@ async function main() {
 
   // ── 3. Summary ─────────────────────────────────────────────────────────────
   step(3, TOTAL, 'Demo account ready');
-  const counts = {};
-  for (const c of ['users', 'shops', 'products', 'customers', 'sales', 'expenses']) {
-    counts[c] = await mongoose.connection.db.collection(c).countDocuments();
-  }
-  info(Object.entries(counts).map(([k, v]) => `${k}:${v}`).join('  '));
+
+  const db = mongoose.connection.db;
+  const count = (c, q = {}) => db.collection(c).countDocuments(q);
+
+  const [shopDocs, userDocs] = await Promise.all([
+    db.collection('shops').find({}).project({ name: 1, type: 1, taxRate: 1 }).toArray(),
+    db.collection('users').find({}).project({ name: 1, email: 1, role: 1 }).toArray(),
+  ]);
+
+  const [products, customers, sales, expenses, roles, notifs] = await Promise.all([
+    count('products'), count('customers'), count('sales'),
+    count('expenses'), count('roles'), count('notifications'),
+  ]);
+
+  const revenue = await db.collection('sales').aggregate([
+    { $match: { status: 'completed' } },
+    { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+  ]).toArray();
+
+  const line = '─'.repeat(74);
+
+  console.log(`\n${line}`);
+  console.log(`  DEMO DATA SUMMARY — database: ${mongoose.connection.name}`);
+  console.log(line);
+  console.log(`  Company    : ${env.DEMO_COMPANY_NAME}`);
+  console.log(`  Shops      : ${shopDocs.length}`);
+  for (const s of shopDocs) console.log(`               · ${s.name}  (${s.type}, GST ${s.taxRate}%)`);
+  console.log(`  Users      : ${userDocs.length}`);
+  console.log(`  Products   : ${products}`);
+  console.log(`  Customers  : ${customers}`);
+  console.log(`  Sales      : ${sales}   (completed revenue ₹${Math.round(revenue[0]?.total || 0).toLocaleString('en-IN')})`);
+  console.log(`  Expenses   : ${expenses}`);
+  console.log(`  Roles      : ${roles}`);
+  console.log(`  Notifs     : ${notifs}`);
+
+  // ── Credentials (terminal only — never written to any file) ────────────────
+  console.log(`\n${line}`);
+  console.log('  DEMO LOGIN CREDENTIALS  (terminal only — not written to disk)');
+  console.log(line);
+  console.log(`  ${'EMAIL'.padEnd(34)}${'PASSWORD'.padEnd(20)}ROLE`);
+  console.log(`  ${'-'.repeat(34)}${'-'.repeat(20)}${'-'.repeat(16)}`);
+
+  const roleOrder = ['super_admin', 'owner', 'manager', 'billing_staff', 'inventory_staff'];
+  userDocs
+    .sort((a, b) => roleOrder.indexOf(a.role) - roleOrder.indexOf(b.role))
+    .forEach((u) => {
+      console.log(`  ${u.email.padEnd(34)}${env.DEMO_PASSWORD.padEnd(20)}${u.role}`);
+    });
+
+  console.log(line);
+  console.log('  All accounts share the DEMO_PASSWORD from .env.demo.');
+  console.log('  Disposable demo database — safe to wipe and reseed at any time.');
+  console.log(`${line}\n`);
 
   await mongoose.disconnect();
 }

@@ -39,7 +39,8 @@ const pngSize = (file) => {
 const expectW = Number(env.DEMO_VIEWPORT_WIDTH);
 const expectH = Number(env.DEMO_VIEWPORT_HEIGHT);
 
-for (const name of EXPECTED) {
+const skipImages = process.env.DEMO_SKIP_SCREENSHOTS === '1';
+for (const name of skipImages ? [] : EXPECTED) {
   const file = path.join(SHOTS_DIR, `${name}.png`);
   if (!fs.existsSync(file)) { failures.push(`missing screenshot: ${name}.png`); continue; }
 
@@ -65,7 +66,7 @@ const extra = actual.filter((a) => !EXPECTED.includes(a));
 if (extra.length) notes.push(`unexpected screenshot(s): ${extra.join(', ')}`);
 
 // ── MP4 checks ───────────────────────────────────────────────────────────────
-const video = path.join(VIDEO_DIR, 'multishop-demo.mp4');
+const video = path.join(VIDEO_DIR, process.env.DEMO_VIDEO_NAME || 'multishop-demo.mp4');
 if (!fs.existsSync(video)) {
   failures.push('missing video: multishop-demo.mp4');
 } else {
@@ -129,7 +130,7 @@ ok('no credentials found in captured output');
 // pages reference. Without this, a publish that wrote the wrong extension would
 // report success while the live site kept serving the previous images.
 const marketing = env.MARKETING_WEBSITE_PATH?.trim();
-if (marketing && fs.existsSync(marketing)) {
+if (!skipImages && marketing && fs.existsSync(marketing)) {
   const imgDir = path.join(marketing, 'public', 'images', 'product');
   const vidFile = path.join(marketing, 'public', 'videos', 'multishop-demo.mp4');
   const startedAt = Date.now() - 60 * 60 * 1000;   // this run, within the last hour

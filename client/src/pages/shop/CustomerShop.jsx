@@ -1,250 +1,44 @@
-import { useState, useEffect, useCallback, useMemo, memo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   ShoppingCart, Store, Search, X, Phone, Mail, MapPin,
-  Flame, Tag, Sparkles, Star, Menu, ChevronRight, Package,
-  ArrowLeft,
+  ArrowLeft, Package, User, ChevronRight, Heart, ChevronDown,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { shopApi } from '../../api/shop.api';
 import useCartStore from '../../store/cartStore';
+import ShopProductCard, { ShopProductGridSkeleton, ShopProductCardSkeleton } from '../../components/shop/ShopProductCard';
+import ShopBottomNav from '../../components/shop/ShopBottomNav';
+import { PromoCarousel, CategoryStrip, ShopSection } from '../../components/shop/ShopSections';
+import { FlashSaleSection, TabbedSection, PromoStrip } from '../../components/shop/FlashAndTabs';
+import useWishlistStore from '../../store/wishlistStore';
 
-// ── Debounce hook ──────────────────────────────────────────────────────────────
-function useDebounce(value, delay = 300) {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const t = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(t);
-  }, [value, delay]);
-  return debounced;
-}
+const GRID = 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 sm:gap-4';
+/** Rail cards need an explicit width — they sit in a horizontal flex scroller. */
+const RAIL_ITEM = 'shrink-0 w-[45%] sm:w-[30%] lg:w-[19%] xl:w-[16%] snap-start';
 
-// ── Product Card ──────────────────────────────────────────────────────────────
-const ProductCard = memo(function ProductCard({ product, slug, onAdd }) {
-  const fp         = product.price * (1 - (product.discount || 0) / 100);
-  const outOfStock = product.stock < 1;
-  const detailLink = `/shop/${slug}/product/${product._id}`;
-
-  return (
-    <div className="group bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all duration-200">
-      <Link to={detailLink} className="block relative">
-        <div className="relative w-full aspect-square bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden">
-          {product.images?.[0] || product.image ? (
-            <img
-              src={product.images?.[0] || product.image}
-              alt={product.name}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-              loading="lazy"
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <Package className="w-10 h-10 text-gray-300" />
-            </div>
-          )}
-          {product.discount > 0 && (
-            <span className="absolute top-2.5 left-2.5 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow">
-              -{product.discount}%
-            </span>
-          )}
-          {product.isNewArrival && (
-            <span className="absolute top-2.5 right-2.5 bg-green-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow">
-              NEW
-            </span>
-          )}
-          {outOfStock && (
-            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-              <span className="bg-white text-gray-700 text-xs font-bold px-3 py-1 rounded-full">
-                Out of Stock
-              </span>
-            </div>
-          )}
-        </div>
-      </Link>
-
-      <div className="p-3">
-        <p className="text-[11px] text-blue-500 font-semibold mb-0.5 truncate">
-          {product.category}
-          {product.subCategory ? ` · ${product.subCategory}` : ''}
-        </p>
-        <Link to={detailLink}>
-          <h3 className="font-semibold text-gray-900 text-sm leading-snug hover:text-blue-600 transition line-clamp-2">
-            {product.name}
-          </h3>
-        </Link>
-
-        <div className="flex items-end justify-between mt-2.5">
-          <div>
-            {product.discount > 0 && (
-              <p className="text-[10px] text-gray-400 line-through leading-none">
-                ₹{product.price.toLocaleString('en-IN')}
-              </p>
-            )}
-            <p className="text-base font-extrabold text-gray-900 leading-snug">
-              ₹{fp.toLocaleString('en-IN')}
-            </p>
-          </div>
-          <button
-            onClick={() => !outOfStock && onAdd(product)}
-            disabled={outOfStock}
-            className="flex items-center justify-center w-9 h-9 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 text-white rounded-xl transition active:scale-90 shadow-sm"
-          >
-            <ShoppingCart className="w-4 h-4" />
-          </button>
-        </div>
-
-        {product.sizes?.length > 0 && (
-          <div className="flex gap-1 mt-2 flex-wrap">
-            {product.sizes.slice(0, 4).map((s) => (
-              <span key={s} className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
-                {s}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-});
-
-// ── Section ───────────────────────────────────────────────────────────────────
-function Section({ title, icon: Icon, iconColor, products, slug, onAdd }) {
-  if (!products.length) return null;
-  return (
-    <section className="py-8">
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-2.5">
-          <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${iconColor}`}>
-            <Icon className="w-5 h-5 text-white" />
-          </div>
-          <h2 className="text-xl font-bold text-gray-900">{title}</h2>
-        </div>
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        {products.slice(0, 10).map((p) => (
-          <ProductCard key={p._id} product={p} slug={slug} onAdd={onAdd} />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-// ── Category Tab ──────────────────────────────────────────────────────────────
-function CategoryTabs({ categories, active, onChange }) {
-  return (
-    <div className="flex gap-2 overflow-x-auto scrollbar-none pb-1">
-      <button
-        onClick={() => onChange('')}
-        className={`shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition ${
-          !active
-            ? 'bg-blue-600 text-white shadow-sm'
-            : 'bg-white border border-gray-200 text-gray-600 hover:border-blue-300'
-        }`}
-      >
-        All
-      </button>
-      {categories.map((cat) => (
-        <button
-          key={cat}
-          onClick={() => onChange(cat === active ? '' : cat)}
-          className={`shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition ${
-            active === cat
-              ? 'bg-blue-600 text-white shadow-sm'
-              : 'bg-white border border-gray-200 text-gray-600 hover:border-blue-300'
-          }`}
-        >
-          {cat}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-// ── Hero ─────────────────────────────────────────────────────────────────────
-function Hero({ shop }) {
-  return (
-    <div
-      className="relative bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 text-white overflow-hidden"
-      style={shop.banner ? { backgroundImage: `url(${shop.banner})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}}
-    >
-      {shop.banner && <div className="absolute inset-0 bg-blue-900/70" />}
-      <div className="absolute inset-0 opacity-10 pointer-events-none">
-        <div className="absolute -top-16 -right-16 w-80 h-80 bg-white rounded-full" />
-        <div className="absolute -bottom-24 -left-12 w-96 h-96 bg-white rounded-full" />
-      </div>
-      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-20">
-        <div className="flex items-center gap-4 mb-4">
-          {shop.logo ? (
-            <img src={shop.logo} alt="" className="w-16 h-16 rounded-2xl object-cover shadow-lg border-2 border-white/30" />
-          ) : (
-            <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center border-2 border-white/30">
-              <Store className="w-8 h-8 text-white" />
-            </div>
-          )}
-          <div>
-            <h1 className="text-3xl md:text-4xl font-extrabold leading-tight">{shop.name}</h1>
-            {shop.type && (
-              <p className="text-blue-200 text-sm font-medium capitalize mt-0.5">
-                {shop.type} store
-              </p>
-            )}
-          </div>
-        </div>
-        {shop.description && (
-          <p className="text-blue-100 text-base max-w-xl mb-5">{shop.description}</p>
-        )}
-        <div className="flex flex-wrap gap-4 text-sm">
-          {shop.phone && (
-            <a href={`tel:${shop.phone}`} className="flex items-center gap-1.5 text-blue-200 hover:text-white transition">
-              <Phone className="w-4 h-4" /> {shop.phone}
-            </a>
-          )}
-          {shop.email && (
-            <a href={`mailto:${shop.email}`} className="flex items-center gap-1.5 text-blue-200 hover:text-white transition">
-              <Mail className="w-4 h-4" /> {shop.email}
-            </a>
-          )}
-          {shop.address && (
-            <span className="flex items-center gap-1.5 text-blue-200">
-              <MapPin className="w-4 h-4" /> {shop.address}
-            </span>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Cart FAB ──────────────────────────────────────────────────────────────────
-function CartFAB({ slug, count }) {
-  if (!count) return null;
-  return (
-    <Link
-      to={`/shop/${slug}/cart`}
-      className="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-3.5 rounded-2xl shadow-2xl shadow-blue-500/40 transition active:scale-95"
-    >
-      <ShoppingCart className="w-5 h-5" />
-      <span>Cart</span>
-      <span className="bg-white text-blue-700 text-xs font-black w-6 h-6 rounded-full flex items-center justify-center">
-        {count > 9 ? '9+' : count}
-      </span>
-    </Link>
-  );
-}
-
-// ── Main ──────────────────────────────────────────────────────────────────────
+/**
+ * CustomerShop — marketplace home for /shop/:slug
+ *
+ * Structure: Header+Search → Categories → Promo carousel → Deals → New arrivals
+ * → Category sections → Recommended → Footer.
+ *
+ * Search and category taps route to /shop/:slug/products (the listing step) so
+ * filtering/sorting lives in exactly one place instead of being duplicated here.
+ */
 export default function CustomerShop() {
-  const { slug }   = useParams();
-  const navigate   = useNavigate();
-  const addItem    = useCartStore((s) => s.addItem);
-  const cartCount  = useCartStore((s) => s.getItemCount());
+  const { slug }  = useParams();
+  const navigate  = useNavigate();
+  const addItem   = useCartStore((s) => s.addItem);
+  const cartItems = useCartStore((s) => s.items);
+  const cartCount = useCartStore((s) => s.getItemCount());
 
-  const [searchInput,    setSearchInput]    = useState('');
-  const [activeCategory, setActiveCategory] = useState('');
-  const [menuOpen,       setMenuOpen]       = useState(false);
-  const debouncedSearch = useDebounce(searchInput);
+  const wishCount = useWishlistStore((s) => s.ids.length);
 
-  // ── Fetch shop by slug ────────────────────────────────────────────────────
+  const [searchInput, setSearchInput] = useState('');
+  const [headerCategory, setHeaderCategory] = useState('');
+
   const { data: shopData, isLoading: shopLoading, isError: shopError } = useQuery({
     queryKey: ['public-shop-slug', slug],
     queryFn:  () => shopApi.getShopBySlug(slug),
@@ -254,67 +48,94 @@ export default function CustomerShop() {
   const shop   = shopData?.data?.shop;
   const shopId = shop?._id;
 
-  // ── Fetch all products for this shop ─────────────────────────────────────
   const { data: productData, isLoading: productsLoading } = useQuery({
-    queryKey: ['public-shop-products', shopId, debouncedSearch, activeCategory],
-    queryFn:  () => shopApi.getProducts({
-      shopId,
-      search:   debouncedSearch || undefined,
-      category: activeCategory  || undefined,
-      limit:    100,
-    }),
+    queryKey: ['public-shop-products', shopId, '', ''],
+    queryFn:  () => shopApi.getProducts({ shopId, limit: 200 }),
     enabled: !!shopId,
     staleTime: 3 * 60 * 1000,
   });
 
-  const allProducts = productData?.data || [];
+  const all = productData?.data || [];
 
-  // ── Derived lists ─────────────────────────────────────────────────────────
+  // Other public shops for the "Explore stores" section — real data only.
+  const { data: shopsData } = useQuery({
+    queryKey: ['public-shops-all'],
+    queryFn:  () => shopApi.getShops(),
+    staleTime: 10 * 60 * 1000,
+  });
+  const otherShops = useMemo(
+    () => (shopsData?.data?.shops || []).filter((s) => s.slug && s.slug !== slug).slice(0, 8),
+    [shopsData, slug]
+  );
+
   const categories = useMemo(() => {
-    const seen = new Set();
-    allProducts.forEach((p) => p.category && seen.add(p.category));
-    return [...seen].sort();
-  }, [allProducts]);
+    const s = new Set();
+    all.forEach((p) => p.category && s.add(p.category));
+    return [...s].sort();
+  }, [all]);
 
-  const newArrivals = useMemo(
-    () => allProducts.filter((p) => p.isNewArrival).slice(0, 10),
-    [allProducts]
-  );
-  const discounted = useMemo(
-    () => allProducts.filter((p) => p.discount > 0).slice(0, 10),
-    [allProducts]
-  );
-  const trending = useMemo(
-    () => allProducts.filter((p) => p.isTrending).slice(0, 10),
-    [allProducts]
-  );
+  const deals       = useMemo(() => all.filter((p) => (p.discount || 0) > 0)
+                        .sort((a, b) => b.discount - a.discount).slice(0, 12), [all]);
+  const newArrivals = useMemo(() => all.filter((p) => p.isNewArrival).slice(0, 12), [all]);
+  const trending    = useMemo(() => all.filter((p) => p.isTrending).slice(0, 12), [all]);
 
-  const handleAdd = useCallback((product) => {
-    addItem(product);
-    toast.success(`${product.name} added!`, { duration: 1500 });
+  /** Recommended = in-stock items not already surfaced above, newest first. */
+  const recommended = useMemo(() => {
+    const shown = new Set([...deals, ...newArrivals, ...trending].map((p) => p._id));
+    return all
+      .filter((p) => p.stock > 0 && !shown.has(p._id))
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 12);
+  }, [all, deals, newArrivals, trending]);
+
+  /** Per-category strips, biggest categories first. */
+  const categorySections = useMemo(() => {
+    const byCat = {};
+    all.forEach((p) => {
+      if (!p.category) return;
+      (byCat[p.category] ||= []).push(p);
+    });
+    return Object.entries(byCat)
+      .sort((a, b) => b[1].length - a[1].length)
+      .slice(0, 4)
+      .map(([name, items]) => ({ name, items: items.slice(0, 12) }));
+  }, [all]);
+
+  /** Best sellers: no sales-per-product field is exposed publicly, so this uses
+   *  the shop-curated isFeatured flag rather than inventing popularity data. */
+  const bestSellers = useMemo(() => all.filter((p) => p.isFeatured).slice(0, 12), [all]);
+
+  const cartQty = useMemo(() => {
+    const m = {};
+    cartItems.forEach((i) => { m[i.productId] = (m[i.productId] || 0) + i.quantity; });
+    return m;
+  }, [cartItems]);
+
+  const handleAdd = useCallback((p) => {
+    addItem(p);
+    toast.success(`${p.name} added to cart`, { duration: 1400 });
   }, [addItem]);
 
-  // ── Loading ───────────────────────────────────────────────────────────────
-  if (shopLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-500 font-medium">Loading shop…</p>
-        </div>
-      </div>
-    );
-  }
+  const submitSearch = (e) => {
+    e.preventDefault();
+    const term = searchInput.trim();
+    navigate(term ? `/shop/${slug}/products?q=${encodeURIComponent(term)}` : `/shop/${slug}/products`);
+  };
+
+  if (shopLoading) return <ShopBootSkeleton />;
 
   if (shopError || !shop) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-6">
-        <Store className="w-16 h-16 text-gray-300 mb-4" />
-        <h1 className="text-xl font-bold text-gray-700">Shop not found</h1>
-        <p className="text-gray-400 mt-1">The shop "{slug}" doesn't exist or has been deactivated.</p>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[var(--color-bg)] p-6 text-center">
+        <Store className="w-16 h-16 text-[var(--color-text-disabled)] mb-4" />
+        <h1 className="text-xl font-bold text-[var(--color-text)]">Shop not found</h1>
+        <p className="text-sm text-[var(--color-text-muted)] mt-1.5 max-w-sm">
+          “{slug}” doesn’t exist or is no longer active.
+        </p>
         <button
           onClick={() => navigate(-1)}
-          className="mt-6 flex items-center gap-2 text-blue-600 hover:text-blue-800 font-medium transition"
+          className="mt-6 inline-flex items-center gap-2 h-11 px-5 rounded-xl border border-[var(--color-border)]
+                     text-[var(--color-text-secondary)] font-semibold hover:bg-[var(--color-card)] transition"
         >
           <ArrowLeft className="w-4 h-4" /> Go back
         </button>
@@ -322,228 +143,336 @@ export default function CustomerShop() {
     );
   }
 
+  const rail = (items) => items.map((p) => (
+    <div key={p._id} className={RAIL_ITEM}>
+      <ShopProductCard product={p} slug={slug} onAdd={handleAdd} inCart={cartQty[p._id] || 0} />
+    </div>
+  ));
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* ── Sticky Navbar ── */}
-      <header className="sticky top-0 z-40 bg-white shadow-sm border-b border-gray-100">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            {/* Logo + name */}
-            <Link to={`/shop/${slug}`} className="flex items-center gap-2.5 shrink-0">
+    <div className="min-h-screen bg-[var(--color-bg)] pb-16 md:pb-0">
+      {/* ── Header — compact light e-commerce bar (not a coloured SaaS band) ── */}
+      <header className="sticky top-0 z-40 bg-[var(--color-card)] border-b border-[var(--color-border)] shadow-sm">
+        <div className="max-w-[1400px] mx-auto px-3 sm:px-6 lg:px-8">
+          <div className="h-14 sm:h-16 flex items-center gap-2 sm:gap-4">
+            <Link to={`/shop/${slug}`} className="flex items-center gap-2 shrink-0 min-w-0">
               {shop.logo ? (
-                <img src={shop.logo} alt="" className="h-9 w-9 rounded-xl object-cover shadow-sm" />
+                <img src={shop.logo} alt="" className="h-8 w-8 sm:h-9 sm:w-9 rounded-lg object-cover" />
               ) : (
-                <div className="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center shadow-sm">
-                  <Store className="w-5 h-5 text-white" />
+                <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-lg bg-[var(--color-primary)] flex items-center justify-center">
+                  <Store className="w-[18px] h-[18px] text-white" />
                 </div>
               )}
-              <span className="font-bold text-lg text-gray-900 hidden sm:block truncate max-w-[180px]">
+              <span className="font-extrabold text-[15px] sm:text-base text-[var(--color-text)] truncate max-w-[100px] sm:max-w-[180px]">
                 {shop.name}
               </span>
             </Link>
 
-            {/* Desktop search */}
-            <div className="hidden md:flex flex-1 max-w-md mx-6 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="Search products…"
-                className="w-full h-10 pl-9 pr-9 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-              />
-              {searchInput && (
-                <button
-                  onClick={() => setSearchInput('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            {/* Search cluster: category dropdown + large input, as in the reference */}
+            <form onSubmit={submitSearch} className="hidden md:flex flex-1 max-w-3xl items-stretch">
+              <div className="relative shrink-0">
+                <select
+                  value={headerCategory}
+                  onChange={(e) => {
+                    const c = e.target.value;
+                    setHeaderCategory(c);
+                    navigate(c ? `/shop/${slug}/products?category=${encodeURIComponent(c)}` : `/shop/${slug}/products`);
+                  }}
+                  aria-label="Filter by category"
+                  className="h-11 pl-3.5 pr-8 rounded-l-xl text-sm font-semibold appearance-none cursor-pointer
+                             bg-[var(--color-bg)] text-[var(--color-text-secondary)]
+                             border border-r-0 border-[var(--color-border)] focus:outline-none"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <option value="">All Category</option>
+                  {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-muted)] pointer-events-none" />
+              </div>
+              <div className="relative flex-1">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-muted)] pointer-events-none" />
+                <input
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  placeholder="Search product or brand here…"
+                  aria-label="Search products"
+                  className="w-full h-11 pl-10 pr-24 rounded-r-xl text-sm bg-[var(--color-bg)] text-[var(--color-text)]
+                             border border-[var(--color-border)] focus:outline-none focus:border-[var(--color-primary)] transition"
+                />
+                <button
+                  type="submit"
+                  className="absolute right-1.5 top-1.5 h-8 px-4 rounded-lg bg-[var(--color-primary)] text-white text-xs font-bold
+                             hover:bg-[var(--color-primary-hover)] transition"
+                >
+                  Search
                 </button>
-              )}
-            </div>
+              </div>
+            </form>
 
-            <div className="flex items-center gap-2">
-              {/* Cart icon */}
-              <Link
-                to={`/shop/${slug}/cart`}
-                className="relative p-2 text-gray-600 hover:text-blue-600 transition"
-              >
-                <ShoppingCart className="w-6 h-6" />
-                {cartCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-                    {cartCount > 9 ? '9+' : cartCount}
+            <div className="flex items-center gap-0.5 sm:gap-1 ml-auto shrink-0">
+              <Link to="/login"
+                className="hidden sm:inline-flex items-center gap-1.5 h-10 px-3 rounded-lg text-sm font-semibold
+                           text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-bg)] transition">
+                <User className="w-4 h-4" /> Login
+              </Link>
+              <Link to={`/shop/${slug}/products`} aria-label={`Wishlist, ${wishCount} saved`} title="Saved items"
+                className="relative inline-flex items-center h-10 px-2.5 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-bg)] transition">
+                <Heart className="w-5 h-5" />
+                {wishCount > 0 && (
+                  <span className="absolute top-1 right-0.5 min-w-[1.05rem] h-[1.05rem] px-1 rounded-full bg-[var(--color-danger)] text-white text-[10px] font-black flex items-center justify-center">
+                    {wishCount > 99 ? '99+' : wishCount}
                   </span>
                 )}
               </Link>
-              {/* Mobile menu */}
-              <button
-                onClick={() => setMenuOpen((v) => !v)}
-                className="md:hidden p-2 text-gray-600"
-              >
-                {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-              </button>
+              <Link to={`/shop/${slug}/cart`} aria-label={`Cart, ${cartCount} items`}
+                className="relative inline-flex items-center gap-1.5 h-10 px-2.5 sm:px-3 rounded-lg text-sm font-semibold
+                           text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-bg)] transition">
+                <span className="relative">
+                  <ShoppingCart className="w-5 h-5" />
+                  {cartCount > 0 && (
+                    <span className="absolute -top-1.5 -right-2 min-w-[1.05rem] h-[1.05rem] px-1 rounded-full bg-[var(--color-danger)] text-white text-[10px] font-black flex items-center justify-center">
+                      {cartCount > 99 ? '99+' : cartCount}
+                    </span>
+                  )}
+                </span>
+                <span className="hidden lg:inline">Cart</span>
+              </Link>
             </div>
           </div>
-        </div>
 
-        {/* Mobile menu */}
-        {menuOpen && (
-          <div className="md:hidden bg-white border-t border-gray-100 px-4 py-3 space-y-2">
-            {/* Mobile search */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="Search products…"
-                className="w-full h-10 pl-9 pr-4 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </div>
-        )}
+          {/* Mobile search row */}
+          <form onSubmit={submitSearch} className="md:hidden pb-2.5 relative">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-muted)] pointer-events-none" />
+            <input
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search products…"
+              aria-label="Search products"
+              className="w-full h-10 pl-10 pr-9 rounded-xl text-sm bg-[var(--color-bg)] text-[var(--color-text)]
+                         border border-[var(--color-border)] focus:outline-none focus:border-[var(--color-primary)]"
+            />
+            {searchInput && (
+              <button type="button" onClick={() => setSearchInput('')} aria-label="Clear"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]">
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </form>
+        </div>
       </header>
 
-      {/* ── Hero ── */}
-      <Hero shop={shop} />
+      {/* ── Body: banner first, then category icons (reference order) ── */}
+      <main className="max-w-[1400px] mx-auto px-3 sm:px-6 lg:px-8 pt-3 sm:pt-4 pb-4 sm:pb-6 space-y-3 sm:space-y-4">
+        <PromoCarousel shop={shop} topDeal={deals[0]} slug={slug} />
+        <CategoryStrip categories={categories} slug={slug} />
 
-      {/* ── Main content ── */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-
-        {/* Category tabs */}
-        {categories.length > 0 && (
-          <CategoryTabs
-            categories={categories}
-            active={activeCategory}
-            onChange={setActiveCategory}
-          />
-        )}
-
-        {/* Search or filtered view */}
-        {debouncedSearch || activeCategory ? (
-          <div>
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-bold text-gray-900">
-                {debouncedSearch ? `Results for "${debouncedSearch}"` : activeCategory}
-                <span className="ml-2 text-sm font-normal text-gray-400">
-                  ({allProducts.length} products)
-                </span>
-              </h2>
-              <button
-                onClick={() => { setSearchInput(''); setActiveCategory(''); }}
-                className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
-              >
-                <X className="w-3.5 h-3.5" /> Clear
-              </button>
-            </div>
-            {productsLoading ? (
-              <ProductSkeletonGrid />
-            ) : allProducts.length > 0 ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                {allProducts.map((p) => (
-                  <ProductCard key={p._id} product={p} slug={slug} onAdd={handleAdd} />
-                ))}
-              </div>
-            ) : (
-              <div className="py-16 text-center text-gray-400">
-                <Package className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                <p className="font-medium">No products found</p>
-              </div>
-            )}
+        {productsLoading ? (
+          <div className="bg-[var(--color-card)] rounded-2xl border border-[var(--color-border)] p-4 sm:p-5">
+            <ShopProductGridSkeleton count={10} />
+          </div>
+        ) : all.length === 0 ? (
+          <div className="py-24 text-center bg-[var(--color-card)] rounded-2xl border border-[var(--color-border)]">
+            <Package className="w-14 h-14 mx-auto text-[var(--color-text-disabled)] mb-3" />
+            <p className="font-bold text-[var(--color-text)]">No products yet</p>
+            <p className="text-sm text-[var(--color-text-muted)] mt-1">This shop hasn’t added anything. Check back soon.</p>
           </div>
         ) : (
           <>
-            {/* Sections */}
-            {trending.length > 0 && (
-              <Section
-                title="Trending Now"
-                icon={Flame}
-                iconColor="bg-orange-500"
-                products={trending}
-                slug={slug}
-                onAdd={handleAdd}
-              />
+            {/* 4 — Flash sale with live countdown (when the shop set an end date) */}
+            <FlashSaleSection
+              products={deals}
+              slug={slug}
+              renderCard={(p) => (
+                <div key={p._id} className={RAIL_ITEM}>
+                  <ShopProductCard product={p} slug={slug} onAdd={handleAdd} inCart={cartQty[p._id] || 0} />
+                </div>
+              )}
+              saleEndsAt={shop.saleBanner?.enabled ? shop.saleBanner?.endDate : null}
+            />
+
+            {/* 5 — Today's For You, with filter tabs */}
+            <TabbedSection
+              title="Today’s For You"
+              slug={slug}
+              gridClass={GRID}
+              tabs={[
+                { label: 'Best Sellers', items: bestSellers,  seeAllTo: `/shop/${slug}/products` },
+                { label: 'New Arrivals', items: newArrivals,  seeAllTo: `/shop/${slug}/products?sort=newest` },
+                { label: 'Discounts',    items: deals,        seeAllTo: `/shop/${slug}/products?discounted=1&sort=discount` },
+                { label: 'Trending',     items: trending,     seeAllTo: `/shop/${slug}/products` },
+                { label: 'Recommended',  items: recommended,  seeAllTo: `/shop/${slug}/products` },
+              ]}
+              renderCard={(p) => (
+                <ShopProductCard key={p._id} product={p} slug={slug} onAdd={handleAdd} inCart={cartQty[p._id] || 0} />
+              )}
+            />
+
+            {/* 8 — promotional banner between sections */}
+            <PromoStrip shop={shop} slug={slug} />
+
+            {/* 6 — category sections as horizontal carousels */}
+            {categorySections.map(({ name, items }) => (
+              <ShopSection
+                key={name}
+                title={name}
+                subtitle={`${items.length} item${items.length === 1 ? '' : 's'}`}
+                rail
+                seeAllTo={`/shop/${slug}/products?category=${encodeURIComponent(name)}`}
+              >
+                {rail(items)}
+              </ShopSection>
+            ))}
+
+            {/* 7 — featured / best selling highlights */}
+            {bestSellers.length > 0 && (
+              <ShopSection title="Featured by the store" subtitle="Hand-picked selections" rail
+                seeAllTo={`/shop/${slug}/products`}>
+                {rail(bestSellers)}
+              </ShopSection>
             )}
-            {newArrivals.length > 0 && (
-              <Section
-                title="New Arrivals"
-                icon={Sparkles}
-                iconColor="bg-green-500"
-                products={newArrivals}
-                slug={slug}
-                onAdd={handleAdd}
-              />
+
+            {recommended.length > 0 && (
+              <ShopSection title="Recommended for you" seeAllTo={`/shop/${slug}/products`}>
+                <div className={GRID}>
+                  {recommended.map((p) => (
+                    <ShopProductCard key={p._id} product={p} slug={slug} onAdd={handleAdd} inCart={cartQty[p._id] || 0} />
+                  ))}
+                </div>
+              </ShopSection>
             )}
-            {discounted.length > 0 && (
-              <Section
-                title="Deals & Discounts"
-                icon={Tag}
-                iconColor="bg-red-500"
-                products={discounted}
-                slug={slug}
-                onAdd={handleAdd}
-              />
+
+            {/* Stores section — real shops from /shops/public. Titled "Explore
+                stores" rather than "Best selling" because no cross-shop sales
+                ranking is exposed publicly and inventing one would be fiction. */}
+            {otherShops.length > 0 && (
+              <ShopSection title="Explore stores" subtitle="More shops on MultiShop">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                  {otherShops.map((s) => (
+                    <Link
+                      key={s._id}
+                      to={`/shop/${s.slug}`}
+                      className="group flex items-center gap-3 p-3.5 rounded-xl border border-[var(--color-border)]
+                                 bg-[var(--color-bg)] hover:border-[var(--color-primary)] hover:shadow-md transition"
+                    >
+                      {s.logo ? (
+                        <img src={s.logo} alt="" loading="lazy" className="w-12 h-12 rounded-xl object-cover shrink-0" />
+                      ) : (
+                        <div className="w-12 h-12 rounded-xl bg-[var(--color-primary-bg)] flex items-center justify-center shrink-0">
+                          <Store className="w-5 h-5 text-[var(--color-primary)]" />
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-[var(--color-text)] truncate group-hover:text-[var(--color-primary)] transition-colors">
+                          {s.name}
+                        </p>
+                        <p className="text-xs text-[var(--color-text-muted)] capitalize truncate">
+                          {s.type ? `${s.type} store` : 'Store'}
+                        </p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-[var(--color-text-muted)] ml-auto shrink-0" />
+                    </Link>
+                  ))}
+                </div>
+              </ShopSection>
             )}
-            {/* All products */}
-            {allProducts.length > 0 && (
-              <Section
-                title="All Products"
-                icon={Star}
-                iconColor="bg-blue-500"
-                products={allProducts}
-                slug={slug}
-                onAdd={handleAdd}
-              />
-            )}
-            {!productsLoading && allProducts.length === 0 && (
-              <div className="py-24 text-center text-gray-400">
-                <Package className="w-16 h-16 mx-auto mb-4 opacity-20" />
-                <p className="text-lg font-medium">No products yet</p>
-                <p className="text-sm mt-1">Check back soon!</p>
-              </div>
-            )}
+
+            {/* Full-width dark promotional band */}
+            <section className="relative overflow-hidden rounded-2xl bg-[var(--color-text)] px-6 sm:px-10 py-10 sm:py-14 text-center">
+              <h2 className="text-white text-xl sm:text-3xl font-extrabold tracking-tight">
+                “Shop {shop.name} with confidence”
+              </h2>
+              <p className="text-white/60 text-sm mt-2 max-w-xl mx-auto">
+                {shop.description || 'Browse the full catalogue and order in a few taps.'}
+              </p>
+              <Link
+                to={`/shop/${slug}/products`}
+                className="mt-6 inline-flex items-center gap-2 h-11 px-6 rounded-xl bg-white text-[var(--color-text)] font-bold
+                           hover:scale-105 transition active:scale-95"
+              >
+                Browse all products <ChevronRight className="w-4 h-4" />
+              </Link>
+            </section>
+
+            <Link
+              to={`/shop/${slug}/products`}
+              className="flex items-center justify-center gap-2 h-14 rounded-2xl bg-[var(--color-card)]
+                         border border-[var(--color-border)] font-bold text-[var(--color-primary)]
+                         hover:border-[var(--color-primary)] transition"
+            >
+              Browse all {all.length} products <ChevronRight className="w-4 h-4" />
+            </Link>
           </>
         )}
-      </div>
+      </main>
 
-      {/* ── Footer ── */}
-      <footer className="bg-gray-900 text-gray-400 py-10 mt-12">
-        <div className="max-w-7xl mx-auto px-4 text-center">
-          {shop.logo ? (
-            <img src={shop.logo} alt="" className="w-10 h-10 rounded-xl object-cover mx-auto mb-3" />
-          ) : (
-            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center mx-auto mb-3">
-              <Store className="w-5 h-5 text-white" />
-            </div>
-          )}
-          <p className="font-semibold text-white text-lg">{shop.name}</p>
-          {shop.address && <p className="text-sm mt-1">{shop.address}</p>}
-          {shop.phone   && <p className="text-sm">{shop.phone}</p>}
-          {shop.email   && <p className="text-sm">{shop.email}</p>}
-          <p className="text-xs text-gray-600 mt-6">Powered by MultiShop</p>
-        </div>
-      </footer>
+      <Footer shop={shop} />
 
-      {/* ── Cart FAB (mobile) ── */}
-      <div className="md:hidden">
-        <CartFAB slug={slug} count={cartCount} />
-      </div>
+      <ShopBottomNav
+        slug={slug}
+        cartCount={cartCount}
+        onSearch={() => document.querySelector('input[aria-label="Search products"]')?.focus()}
+        onCategories={() => navigate(`/shop/${slug}/products`)}
+      />
     </div>
   );
 }
 
-// ── Skeleton grid ─────────────────────────────────────────────────────────────
-function ProductSkeletonGrid() {
+function Footer({ shop }) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-      {Array.from({ length: 10 }, (_, i) => (
-        <div key={i} className="bg-white rounded-2xl border border-gray-100 overflow-hidden animate-pulse">
-          <div className="aspect-square bg-gray-100" />
-          <div className="p-3 space-y-2">
-            <div className="h-2.5 bg-gray-100 rounded w-3/4" />
-            <div className="h-3 bg-gray-100 rounded w-full" />
-            <div className="h-4 bg-gray-100 rounded w-1/3" />
+    <footer className="border-t border-[var(--color-border)] bg-[var(--color-card)] mt-6">
+      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-10 text-center">
+        {shop.logo ? (
+          <img src={shop.logo} alt="" className="w-11 h-11 rounded-xl object-cover mx-auto mb-3" />
+        ) : (
+          <div className="w-11 h-11 rounded-xl bg-[var(--color-primary)] flex items-center justify-center mx-auto mb-3">
+            <Store className="w-5 h-5 text-white" />
+          </div>
+        )}
+        <p className="font-bold text-[var(--color-text)]">{shop.name}</p>
+        {shop.description && (
+          <p className="text-sm text-[var(--color-text-muted)] mt-1.5 max-w-xl mx-auto">{shop.description}</p>
+        )}
+        <div className="flex flex-wrap justify-center gap-x-5 gap-y-2 mt-4 text-sm text-[var(--color-text-secondary)]">
+          {shop.phone && (
+            <a href={`tel:${shop.phone}`} className="flex items-center gap-1.5 hover:text-[var(--color-primary)] transition">
+              <Phone className="w-4 h-4" /> {shop.phone}
+            </a>
+          )}
+          {shop.email && (
+            <a href={`mailto:${shop.email}`} className="flex items-center gap-1.5 hover:text-[var(--color-primary)] transition">
+              <Mail className="w-4 h-4" /> {shop.email}
+            </a>
+          )}
+          {shop.address && (
+            <span className="flex items-center gap-1.5"><MapPin className="w-4 h-4" /> {shop.address}</span>
+          )}
+        </div>
+        <p className="text-xs text-[var(--color-text-disabled)] mt-6">Powered by MultiShop</p>
+      </div>
+    </footer>
+  );
+}
+
+/** Boot skeleton mirroring the marketplace layout — no jump when data lands. */
+function ShopBootSkeleton() {
+  return (
+    <div className="min-h-screen bg-[var(--color-bg)]">
+      <div className="h-14 sm:h-16 bg-[var(--color-card)] border-b border-[var(--color-border)]" />
+      <div className="h-[86px] bg-[var(--color-card)] border-b border-[var(--color-border)]" />
+      <div className="max-w-[1400px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-6">
+        <div className="h-40 sm:h-56 lg:h-72 rounded-2xl bg-[var(--color-border-light)] animate-pulse" />
+        <div className="bg-[var(--color-card)] rounded-2xl border border-[var(--color-border)] overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-[var(--color-border)]">
+            <div className="h-4 w-40 rounded bg-[var(--color-bg)] animate-pulse" />
+          </div>
+          <div className="flex gap-4 p-5 overflow-hidden">
+            {Array.from({ length: 6 }, (_, i) => (
+              <div key={i} className="shrink-0 w-[45%] sm:w-[30%] lg:w-[19%] xl:w-[16%]">
+                <ShopProductCardSkeleton />
+              </div>
+            ))}
           </div>
         </div>
-      ))}
+      </div>
     </div>
   );
 }

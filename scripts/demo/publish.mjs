@@ -23,7 +23,8 @@ const env = loadDemoEnv();
 const CY_OUT     = path.join(ROOT, 'client', 'cypress', 'demo-output');
 const CY_SHOTS   = path.join(CY_OUT, 'images');
 const CY_VIDEO   = path.join(CY_OUT, 'video');
-const VIDEO_NAME = VIDEO_FILE;
+// A themed run can name its own video (e.g. vicky-shoes-demo.mp4)
+const VIDEO_NAME = process.env.DEMO_VIDEO_NAME || VIDEO_FILE;
 
 const walk = (dir) => {
   if (!fs.existsSync(dir)) return [];
@@ -38,7 +39,10 @@ ensureDirs(OUTPUT_DIR, SHOTS_DIR, VIDEO_DIR);
 // ── 1. Flatten screenshots ───────────────────────────────────────────────────
 // Cypress nests by spec name and may append " (attempt n)" / "(1)" — normalise.
 const shots = walk(CY_SHOTS).filter((f) => f.endsWith('.png'));
-if (!shots.length) throw new Error(`No screenshots found in ${CY_SHOTS}`);
+// A themed video-only run (DEMO_SKIP_SCREENSHOTS=1) legitimately has no PNGs.
+if (!shots.length && process.env.DEMO_SKIP_SCREENSHOTS !== '1') {
+  throw new Error(`No screenshots found in ${CY_SHOTS}`);
+}
 
 for (const f of fs.readdirSync(SHOTS_DIR)) fs.rmSync(path.join(SHOTS_DIR, f), { force: true });
 
@@ -59,7 +63,9 @@ if (!videos.length) throw new Error(`No MP4 found in ${CY_VIDEO}`);
 
 // Cypress records every run, so the screenshot pass leaves a throwaway video too.
 // Pick the TOUR spec's recording explicitly; fall back to newest if renamed.
-const tour = videos.filter((f) => /02-tour/.test(path.basename(f)));
+// Match whichever spec this run recorded, not a hardcoded name
+const tourSpec = (process.env.DEMO_TOUR_SPEC || '02-tour').split('/').pop().replace(/.cy.js$/, '');
+const tour = videos.filter((f) => path.basename(f).includes(tourSpec));
 const pick = (tour.length ? tour : videos)
   .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
 
@@ -120,7 +126,7 @@ try {
 }
 
 let published = 0;
-for (const f of fs.readdirSync(SHOTS_DIR)) {
+for (const f of (fs.existsSync(SHOTS_DIR) ? fs.readdirSync(SHOTS_DIR) : [])) {
   if (!f.endsWith('.png')) continue;
   const name = path.basename(f, '.png');
   const out  = path.join(imgDest, `${name}.${PUBLISH_EXT}`);

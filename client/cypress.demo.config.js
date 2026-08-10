@@ -61,6 +61,8 @@ export default defineConfig({
       demoEmail:    process.env.DEMO_EMAIL    || '',
       demoPassword: process.env.DEMO_PASSWORD || '',
       companyName:  process.env.DEMO_COMPANY_NAME || 'Nova Retail Group',
+      // Scales every dwell in the tour spec so video length is tunable per run
+      pace:         process.env.DEMO_PACE || '',
     },
 
     setupNodeEvents(on) {

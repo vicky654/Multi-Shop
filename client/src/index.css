@@ -337,3 +337,25 @@ html.dark {
   html.compact main .text-2xl { font-size: 1.25rem !important; line-height: 1.75rem !important; }
   html.compact main .text-xl  { font-size: 1.1rem  !important; }
 }
+
+/* ── Customer Shop: mobile sheet transitions ──────────────────────────────────
+   Used by the storefront's search/category bottom sheets. Plain CSS keyframes
+   so the storefront needs no animation dependency. `prefers-reduced-motion` is
+   respected below. */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

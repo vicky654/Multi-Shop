@@ -38,6 +38,8 @@ const ShopProductDetail = lazy(() => import('../pages/shop/ShopProductDetail'));
 const ShopCart          = lazy(() => import('../pages/shop/ShopCart'));
 const CustomerShop      = lazy(() => import('../pages/shop/CustomerShop'));
 const SlugProductDetail = lazy(() => import('../pages/shop/SlugProductDetail'));
+const SlugCart          = lazy(() => import('../pages/shop/SlugCart'));
+const SlugListing       = lazy(() => import('../pages/shop/SlugListing'));
 
 // ── Fallback spinner for Suspense ─────────────────────────────────────────────
 function PageLoader() {
@@ -75,7 +77,11 @@ export default function AppRoutes() {
 
         {/* ── Slug-based public shop (e.g. /shop/vicky-fashion) ── */}
         <Route path="/shop/:slug"              element={<CustomerShop />} />
+        <Route path="/shop/:slug/products"     element={<SlugListing />} />
         <Route path="/shop/:slug/product/:id"  element={<SlugProductDetail />} />
+        {/* Cart/checkout for the slug storefront. Previously missing, so every
+            cart link fell through to the catch-all and redirected to /login. */}
+        <Route path="/shop/:slug/cart"         element={<SlugCart />} />
 
         {/* ── Query-param shop (legacy / internal) ── */}
         <Route element={<ShopLayout />}>
