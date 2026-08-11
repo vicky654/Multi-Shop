@@ -17,7 +17,7 @@ describe('Billing — Hold/Resume, shortcut and audited bill edit', () => {
   const PRODUCT_NAME = 'Test Rice 5kg';
 
   // Totals the POS shows include the shop's GST
-  const withTax = (units) => +((200 * units) * (1 + taxRate / 100)).toFixed(2);
+  const withTax = (units) => Math.round((200 * units) * (1 + taxRate / 100)); // statutory round-off
 
   before(() => {
     cy.login();

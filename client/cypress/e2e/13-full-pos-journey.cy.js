@@ -134,7 +134,7 @@ describe('Full POS journey — bill to audit', () => {
     cy.goToBilling();
     cy.addProductToCart(PRODUCT_NAME);
 
-    const expected = +(PRODUCT_PRICE * (1 + taxRate / 100)).toFixed(2);
+    const expected = Math.round(PRODUCT_PRICE * (1 + taxRate / 100)); // statutory round-off
 
     cy.get('[data-testid="payment-upi_qr"]', { timeout: 10000 }).should('be.visible').click();
 
@@ -175,7 +175,7 @@ describe('Full POS journey — bill to audit', () => {
       // ── Bill details / invoice ─────────────────────────────────────────────
       cy.get('[data-testid="invoice-modal"]', { timeout: 12000 }).should('be.visible');
       cy.get('[data-testid="payment-status-badge"]').should('contain', 'PAID');
-      cy.get('[data-testid="invoice-number"]').invoke('text').should('match', /INV-/);
+      cy.get('[data-testid="invoice-number"]').invoke('text').should('match', /[A-Z]+\/\d{4}-\d{2}\/\d{6}/);
       cy.contains('E2E-JRN-001').should('exist');   // SKU on the invoice line
       cy.contains(UTR).should('exist');             // UPI reference recorded
     });
@@ -192,7 +192,7 @@ describe('Full POS journey — bill to audit', () => {
       cy.get('input[type="number"]').first().should('have.value', '6');
     });
 
-    const totalFor = (units) => +((PRODUCT_PRICE * units) * (1 + taxRate / 100)).toFixed(2);
+    const totalFor = (units) => Math.round((PRODUCT_PRICE * units) * (1 + taxRate / 100));
 
     cy.apiRequest('GET', `/products/${productId}`).then((p0) => {
       const stockBefore = Cypress.unwrapProduct(p0).stock;

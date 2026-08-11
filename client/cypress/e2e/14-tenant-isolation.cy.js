@@ -23,6 +23,7 @@ const FORBIDDEN = [403, 404];   // either is acceptable: denied or invisible
 
 describe('Tenant isolation — Shop A must not reach Shop B', () => {
   let shopA, shopB;
+  let staffTokenOuter = null;
   let bProductId, bCustomerId, bSaleId, bExpenseId;
 
   before(() => {
@@ -55,6 +56,13 @@ describe('Tenant isolation — Shop A must not reach Shop B', () => {
 
   beforeEach(() => cy.login());
 
+  const asOuter = (method, path) => cy.request({
+    method,
+    url: Cypress.env('apiUrl') + path,
+    headers: staffTokenOuter ? { Authorization: 'Bearer ' + staffTokenOuter } : {},
+    failOnStatusCode: false,
+  });
+
   // ── The core guarantee: a scoped user cannot query another shop ────────────
   // Simulated by a staff account whose `shops` contains only one shop.
   describe('staff scoped to a single shop', () => {
@@ -74,7 +82,7 @@ describe('Tenant isolation — Shop A must not reach Shop B', () => {
         cy.request({
           method: 'POST', url: `${Cypress.env('apiUrl')}/auth/login`,
           body: { email, password: 'IsoTest#12345' }, failOnStatusCode: false,
-        }).then((r) => { if (r.status === 200) staffToken = r.body.data.token; });
+        }).then((r) => { if (r.status === 200) { staffToken = r.body.data.token; staffTokenOuter = staffToken; } });
       });
     });
 
@@ -198,6 +206,47 @@ describe('Tenant isolation — Shop A must not reach Shop B', () => {
           const leaked = res.status === 200 && (res.body.data?.length > 0);
           expect(leaked, `${p} leaked data for a foreign shopId`).to.eq(false);
         });
+      });
+    });
+  });
+
+  // ── Direct-ID access: the resource id itself must not leak the row ─────────
+  // Query-param guards (shopAccess) are only half the story — fetching Shop B's
+  // record BY ID must also be refused, because that path carries no shopId.
+  describe('direct-ID cross-shop access', () => {
+    const denied = (res, what) => {
+      const leaked = res.status === 200 && !!(res.body?.data && Object.keys(res.body.data).length);
+      expect(leaked, what + ' leaked via direct id').to.eq(false);
+    };
+
+    it('TC-ISO-030: product by id', () => {
+      if (!staffTokenOuter || !bProductId) { cy.log('prereq missing'); return; }
+      asOuter('GET', '/products/' + bProductId).then((r) => denied(r, 'product'));
+    });
+    it('TC-ISO-031: customer by id', () => {
+      if (!staffTokenOuter || !bCustomerId) { cy.log('prereq missing'); return; }
+      asOuter('GET', '/customers/' + bCustomerId).then((r) => denied(r, 'customer'));
+    });
+    it('TC-ISO-032: sale/invoice by id', () => {
+      if (!staffTokenOuter || !bSaleId) { cy.log('prereq missing'); return; }
+      asOuter('GET', '/sales/' + bSaleId).then((r) => denied(r, 'sale'));
+    });
+    it('TC-ISO-033: expense update by id', () => {
+      if (!staffTokenOuter || !bExpenseId) { cy.log('prereq missing'); return; }
+      asOuter('PUT', '/expenses/' + bExpenseId).then((r) => {
+        expect(r.status, 'expense update').to.not.eq(200);
+      });
+    });
+    it('TC-ISO-034: credit ledger by customer id', () => {
+      if (!staffTokenOuter || !bCustomerId) { cy.log('prereq missing'); return; }
+      asOuter('GET', '/credit-ledger/' + bCustomerId + '?shopId=' + shopB).then((r) => {
+        expect(r.status === 200 && (r.body.data || []).length > 0, 'ledger leaked').to.eq(false);
+      });
+    });
+    it('TC-ISO-035: sale edit by id is refused', () => {
+      if (!staffTokenOuter || !bSaleId) { cy.log('prereq missing'); return; }
+      asOuter('PATCH', '/sales/' + bSaleId).then((r) => {
+        expect(r.status, 'cross-shop bill edit').to.not.eq(200);
       });
     });
   });

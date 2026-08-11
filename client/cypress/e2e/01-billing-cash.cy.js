@@ -17,7 +17,7 @@ describe('Billing — Complete Cash Sale Flow', () => {
   const PRODUCT_NAME = 'Test Rice 5kg';   // seed this product in your test DB
 
   // Grand total for `units` of PRODUCT_NAME, tax included, as the POS displays it
-  const withTax = (units) => (200 * units) * (1 + taxRate / 100);
+  const withTax = (units) => Math.round((200 * units) * (1 + taxRate / 100)); // statutory round-off
 
   // ── Before all: seed product via API, grab IDs ─────────────────────────────
   before(() => {
@@ -159,7 +159,11 @@ describe('Billing — Complete Cash Sale Flow', () => {
       expect(sale.status).to.eq('completed');
       expect(sale.items).to.have.length(1);
       expect(sale.items[0].name).to.include(PRODUCT_NAME);
-      expect(sale.invoiceNumber).to.match(/^INV-/);
+      // Format changed intentionally: the old INV-00001-1234 scheme came from
+      // countDocuments()+timestamp, which handed concurrent sales the same
+      // number. Now PREFIX/FY/SEQ, reserved atomically per shop+financial year.
+      expect(sale.invoiceNumber, 'invoice format PREFIX/FY/SEQ')
+        .to.match(/^[A-Z]+\/\d{4}-\d{2}\/\d{6}$/);
     });
 
     // Invoice modal should open
@@ -169,7 +173,7 @@ describe('Billing — Complete Cash Sale Flow', () => {
     // Invoice number is shown in the modal header
     cy.get('[data-testid="invoice-number"]')
       .invoke('text')
-      .should('match', /INV-\d{5}-\d{4}/);
+      .should('match', /[A-Z]+\/\d{4}-\d{2}\/\d{6}/);
 
     // Success toast should appear
     cy.contains('Sale recorded', { timeout: 6000 }).should('exist');

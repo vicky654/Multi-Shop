@@ -17,7 +17,9 @@ describe('Payments — UPI QR configuration and settlement', () => {
   const UTR = `4${String(Date.now()).slice(-11)}`;
 
   // Bill total for one unit at ₹150, GST included
-  const oneUnitTotal = () => +(150 * (1 + taxRate / 100)).toFixed(2);
+  // Server applies statutory round-off to the nearest rupee (utils/gst.js), and
+  // the POS previews the same figure, so the expected total is the ROUNDED one.
+  const oneUnitTotal = () => Math.round(150 * (1 + taxRate / 100));
 
   // cy.apiRequest reads the token from the restored session, so every test
   // needs cy.login() — without it the token is gone and requests 401.

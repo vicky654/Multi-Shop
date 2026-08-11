@@ -1,7 +1,16 @@
 import { useState, useMemo, useCallback } from 'react';
 import toast from 'react-hot-toast';
 
-export function useCart(shopTaxRate = 0) {
+/**
+ * @param {number}  shopTaxRate  default GST % for the shop
+ * @param {boolean} roundOff     mirror the shop's invoiceRoundOff setting.
+ *   The server rounds the final payable to the nearest rupee (utils/gst.js), so
+ *   the POS must preview the SAME figure — otherwise the pay button shows
+ *   ₹157.50 while the bill and UPI QR charge ₹158, and the cashier collects the
+ *   wrong amount. This is display+validation only; the server remains the
+ *   authority and recomputes everything.
+ */
+export function useCart(shopTaxRate = 0, roundOff = true) {
   const [cart, setCart] = useState([]);
   const [discountMode, setDiscountMode] = useState('pct'); // 'pct' | 'flat'
   const [taxPreset, setTaxPreset] = useState('shop'); // 'shop' | 'custom' | number string
@@ -165,9 +174,18 @@ export function useCart(shopTaxRate = 0) {
     return totals.beforeTax * (taxRate / 100);
   }, [totals.beforeTax, taxRate]);
 
+  // Matches the server's statutory round-off so the previewed total, the pay
+  // button, the UPI QR amount and the final invoice all agree to the paisa.
   const grandTotal = useMemo(() => {
-    return totals.beforeTax + taxAmount;
-  }, [totals.beforeTax, taxAmount]);
+    const exact = totals.beforeTax + taxAmount;
+    return roundOff ? Math.round(exact) : exact;
+  }, [totals.beforeTax, taxAmount, roundOff]);
+
+  /** Signed difference the round-off introduced, for display next to the total. */
+  const roundOffAmount = useMemo(() => {
+    const exact = totals.beforeTax + taxAmount;
+    return roundOff ? +(Math.round(exact) - exact).toFixed(2) : 0;
+  }, [totals.beforeTax, taxAmount, roundOff]);
 
   return {
     cart,
@@ -191,5 +209,6 @@ export function useCart(shopTaxRate = 0) {
     totals,
     taxAmount,
     grandTotal,
+    roundOffAmount,
   };
 }

@@ -35,7 +35,7 @@ export default function Billing() {
   const shopTaxRate = activeShop?.taxRate || 0;
 
   // ── 1. Initialize Custom hooks ──
-  const cartHook = useCart(shopTaxRate);
+  const cartHook = useCart(shopTaxRate, activeShop?.invoiceRoundOff !== false);
   const {
     cart, discountMode, setDiscountMode, taxPreset, setTaxPreset,
     customTaxVal, setCustomTaxVal, taxRate, addToCart, incrementQty,
