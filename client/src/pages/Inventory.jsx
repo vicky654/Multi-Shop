@@ -13,7 +13,8 @@ import useShopStore  from '../store/shopStore';
 import useSetupStore from '../store/setupStore';
 import DataTable from '../components/DataTable';
 import Modal from '../components/Modal';
-import { ProductForm, EMPTY_FORM } from '../components/ProductForm';
+import { ProductWizard } from '../components/product-wizard/ProductWizard';
+import { EMPTY_WIZARD_FORM, hydrateForm } from '../components/product-wizard/useProductWizard';
 import ImageCarousel from '../components/ImageCarousel';
 import CSVImportModal from '../components/CSVImportModal';
 import ProductImportReviewModal from '../components/ProductImportReviewModal';
@@ -175,7 +176,7 @@ export default function Inventory() {
   // ── Product modal state ───────────────────────────────────────────────────────
   const [showModal,   setShowModal]   = useState(false);
   const [editProduct, setEditProduct] = useState(null);
-  const [form,        setForm]        = useState({ ...EMPTY_FORM, shopId });
+  const [form,        setForm]        = useState({ ...EMPTY_WIZARD_FORM, shopId });
 
   // Remember last-entered values so "Add another" pre-fills category/shop
   const lastValuesRef = useRef({});
@@ -183,7 +184,7 @@ export default function Inventory() {
   const openCreate = (prefillBarcode = '') => {
     setEditProduct(null);
     setForm({
-      ...EMPTY_FORM,
+      ...EMPTY_WIZARD_FORM,
       shopId,
       // Re-use last category/unit for fast entry
       category: lastValuesRef.current.category || '',
@@ -195,28 +196,22 @@ export default function Inventory() {
 
   const openEdit = (p) => {
     setEditProduct(p);
-    setForm({
-      ...EMPTY_FORM, ...p,
-      shopId: p.shopId?._id || p.shopId,
-      sizes:  p.sizes  || [],
-      colors: p.colors || [],
-      images: p.images || (p.image ? [p.image] : []),
-    });
+    // hydrateForm rebuilds the wizard-only fields (hasVariants, variantAxis,
+    // totalReceived) from trackVariantStock and the shape of variantStock.
+    setForm(hydrateForm(p, shopId));
     setShowModal(true);
   };
 
   const openDuplicate = (p) => {
     setEditProduct(null);
     setForm({
-      ...EMPTY_FORM, ...p,
-      _id:    undefined,
-      shopId: p.shopId?._id || p.shopId || shopId,
+      ...hydrateForm(p, shopId),
+      _id:     undefined,
       barcode: '',   // clear barcode to avoid duplicate key
       sku:     '',   // clear SKU so it auto-generates
       name:    `${p.name} (copy)`,
-      sizes:   p.sizes  || [],
-      colors:  p.colors || [],
-      images:  p.images || (p.image ? [p.image] : []),
+      // variantStock is deliberately KEPT — duplicating a shoe product together
+      // with its whole colour/size matrix is the main reason to duplicate at all.
     });
     setShowModal(true);
   };
@@ -263,7 +258,13 @@ export default function Inventory() {
       lastValuesRef.current = { category: vars.category, unit: vars.unit };
       qc.invalidateQueries(['products']);
       qc.invalidateQueries(['categories']);
-      toast.success('Product created');
+      // Only drop the autosaved draft once the product is safely persisted.
+      clearDraftRef.current?.();
+      toast.success(
+        vars.trackVariantStock
+          ? `Product created — ${vars.variantStock.length} variants, ${vars.stock} ${vars.unit || 'units'}`
+          : 'Product created'
+      );
       closeModal();
     },
     onError: (e) => toast.error(e?.response?.data?.message || e.message),
@@ -271,7 +272,12 @@ export default function Inventory() {
 
   const updateMut = useMutation({
     mutationFn: ({ id, data }) => productsApi.update(id, data),
-    onSuccess: () => { qc.invalidateQueries(['products']); toast.success('Product updated'); closeModal(); },
+    onSuccess: () => {
+      qc.invalidateQueries(['products']);
+      clearDraftRef.current?.();
+      toast.success('Product updated');
+      closeModal();
+    },
     onError:   (e) => toast.error(e?.response?.data?.message || e.message),
   });
 
@@ -292,10 +298,14 @@ export default function Inventory() {
     onError: (e) => toast.error(e?.response?.data?.message || e.message),
   });
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (editProduct) updateMut.mutate({ id: editProduct._id, data: form });
-    else createMut.mutate(form);
+  // The wizard hands over a built payload (and a callback to clear its saved
+  // draft) rather than raw form state, because `stock` and `variantStock` have to
+  // be derived from the matrix before they leave the browser.
+  const clearDraftRef = useRef(null);
+  const handleSubmit = (payload, clearDraft) => {
+    clearDraftRef.current = clearDraft;
+    if (editProduct) updateMut.mutate({ id: editProduct._id, data: payload });
+    else createMut.mutate(payload);
   };
 
   // ── Export (server-side, all products) ────────────────────────────────────────
@@ -377,10 +387,19 @@ export default function Inventory() {
     },
     {
       key: 'stock', label: 'Stock', render: (v, r) => (
-        <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${v <= r.lowStockThreshold ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-          {v <= r.lowStockThreshold && <AlertTriangle className="inline w-3 h-3 mr-0.5" />}
-          {v} {r.unit}
-        </span>
+        <div className="flex flex-col items-start gap-0.5">
+          <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${v <= r.lowStockThreshold ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+            {v <= r.lowStockThreshold && <AlertTriangle className="inline w-3 h-3 mr-0.5" />}
+            {v} {r.unit}
+          </span>
+          {/* Makes it obvious the total is a sum of cells, not one bucket —
+              otherwise "60 pair" looks adjustable when it is actually derived. */}
+          {r.trackVariantStock && (
+            <span className="text-[10px] font-semibold text-purple-600">
+              {r.variantStock?.length || 0} variants
+            </span>
+          )}
+        </div>
       ),
     },
     {
@@ -558,10 +577,11 @@ export default function Inventory() {
 
       {/* ── Product Create/Edit Modal ── */}
       <Modal open={showModal} onClose={closeModal} title={editProduct ? 'Edit Product' : 'Add Product'} size="xl">
-        <ProductForm
+        <ProductWizard
           form={form} setForm={setForm} onSubmit={handleSubmit}
           loading={createMut.isPending || updateMut.isPending}
           shops={shops} shopId={shopId} categories={categories}
+          isEdit={!!editProduct} productId={editProduct?._id}
         />
       </Modal>
 

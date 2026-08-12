@@ -11,7 +11,7 @@
  * Replaces the old single-page ProductForm and carries every one of its fields,
  * so nothing regresses for products that never touch variants.
  */
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Package, Grid3x3, Tag, FileText, ClipboardCheck,
   ChevronLeft, ChevronRight, Check, AlertCircle, Loader2,
@@ -50,13 +50,18 @@ export function ProductWizard({
     [form.hasVariants]
   );
 
-  const idx      = visibleSteps.findIndex((s) => s.n === step);
+  // If variants get switched off while sitting on step 2, that step disappears.
+  // Fall back to 1 for this render and correct the state in an effect — setting
+  // state during render would warn.
+  const rawIdx   = visibleSteps.findIndex((s) => s.n === step);
+  const safeStep = rawIdx === -1 ? 1 : step;
+  const idx      = rawIdx === -1 ? 0 : rawIdx;
   const isFirst  = idx <= 0;
   const isLast   = idx === visibleSteps.length - 1;
 
-  // If variants get switched off while sitting on step 2, don't strand the user.
-  const safeStep = idx === -1 ? 1 : step;
-  if (idx === -1 && step !== 1) setStep(1);
+  useEffect(() => {
+    if (rawIdx === -1) setStep(1);
+  }, [rawIdx]);
 
   const goNext = () => {
     if (!wiz.canAdvance(safeStep)) return;

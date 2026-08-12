@@ -14,17 +14,30 @@ const REASONS = [
   { value: 'audit',      label: 'Audit Adjustment',       color: 'text-amber-700  bg-amber-50  border-amber-200' },
 ];
 
+// Label for one variant cell, e.g. "Black / 9".
+const variantLabel = (v) => [v.color, v.size].filter(Boolean).join(' / ') || '—';
+const variantValue = (v) => `${v.color || ''}||${v.size || ''}`;
+
 export default function StockAdjustModal({ product, open, onClose }) {
   const qc     = useQueryClient();
-  const [delta,  setDelta]  = useState('');
-  const [reason, setReason] = useState('restock');
-  const [notes,  setNotes]  = useState('');
+  const [delta,   setDelta]   = useState('');
+  const [reason,  setReason]  = useState('restock');
+  const [notes,   setNotes]   = useState('');
+  const [variant, setVariant] = useState('');
+
+  // A variant product's root stock is the sum of its cells, so the API refuses a
+  // root-only adjustment (400). Pick the cell here, and both move in lockstep.
+  const isVariantProduct = !!product?.trackVariantStock;
+  const variants         = product?.variantStock || [];
+  const selectedVariant  = variants.find((v) => variantValue(v) === variant) || null;
 
   const mut = useMutation({
     mutationFn: () => productsApi.adjustStock(product._id, {
       delta: parseInt(delta, 10),
       reason,
       notes,
+      size:  selectedVariant?.size  || undefined,
+      color: selectedVariant?.color || undefined,
     }),
     onSuccess: (res) => {
       const { previousStock, newStock } = res.data;
@@ -32,17 +45,22 @@ export default function StockAdjustModal({ product, open, onClose }) {
       qc.invalidateQueries({ queryKey: ['products'] });
       handleClose();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(e?.response?.data?.message || e.message),
   });
 
   const handleClose = () => {
-    setDelta(''); setReason('restock'); setNotes('');
+    setDelta(''); setReason('restock'); setNotes(''); setVariant('');
     onClose();
   };
 
   const num      = parseInt(delta, 10);
-  const isValid  = !isNaN(num) && num !== 0;
-  const newStock = isValid ? (product?.stock ?? 0) + num : null;
+  const hasQty   = !isNaN(num) && num !== 0;
+  // A variant product cannot be adjusted until a cell is chosen.
+  const isValid  = hasQty && (!isVariantProduct || !!selectedVariant);
+  // Preview against the CELL for variant products — the figure the user is
+  // actually changing — rather than the product total.
+  const basis    = isVariantProduct ? (selectedVariant?.stock ?? 0) : (product?.stock ?? 0);
+  const newStock = hasQty ? basis + num : null;
   const isNeg    = num < 0;
 
   return (
@@ -51,11 +69,38 @@ export default function StockAdjustModal({ product, open, onClose }) {
 
         {/* Current stock */}
         <div className="flex items-center justify-between px-4 py-3 bg-gray-50 rounded-xl">
-          <span className="text-sm text-gray-500">Current stock</span>
+          <span className="text-sm text-gray-500">
+            {isVariantProduct ? 'Total across all variants' : 'Current stock'}
+          </span>
           <span className="text-xl font-black text-gray-900 tabular-nums">
             {product?.stock ?? 0} <span className="text-sm font-medium text-gray-400">{product?.unit || 'pcs'}</span>
           </span>
         </div>
+
+        {/* Variant picker — required for variant-tracked products */}
+        {isVariantProduct && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Which variant? <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={variant}
+              onChange={(e) => setVariant(e.target.value)}
+              className="w-full h-11 px-3 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Select a size / color…</option>
+              {variants.map((v) => (
+                <option key={variantValue(v)} value={variantValue(v)}>
+                  {variantLabel(v)} — {v.stock} in stock
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-gray-400">
+              This product tracks stock per variant, so the total can only change by
+              adjusting a specific cell.
+            </p>
+          </div>
+        )}
 
         {/* Delta input */}
         <div>
@@ -91,13 +136,19 @@ export default function StockAdjustModal({ product, open, onClose }) {
           </div>
 
           {/* New stock preview */}
-          {isValid && (
+          {hasQty && (isVariantProduct ? !!selectedVariant : true) && (
             <div className={`mt-2 flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${
               newStock < 0 ? 'bg-red-50 text-red-700' : isNeg ? 'bg-amber-50 text-amber-700' : 'bg-green-50 text-green-700'
             }`}>
               {newStock < 0 && <AlertTriangle className="w-4 h-4 shrink-0" />}
-              New stock will be: <span className="font-black ml-1">{newStock} {product?.unit || 'pcs'}</span>
+              {selectedVariant ? `${variantLabel(selectedVariant)} will be:` : 'New stock will be:'}
+              <span className="font-black ml-1">{newStock} {product?.unit || 'pcs'}</span>
               {newStock < 0 && <span className="ml-1">(cannot go below 0)</span>}
+              {selectedVariant && newStock >= 0 && (
+                <span className="ml-1 text-xs opacity-70">
+                  (total {(product?.stock ?? 0) + num})
+                </span>
+              )}
             </div>
           )}
         </div>
