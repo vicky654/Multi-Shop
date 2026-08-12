@@ -37,6 +37,10 @@ const shopSchema = new mongoose.Schema(
     stateCode: { type: String, trim: true, default: '' },
     // Whether catalogue prices already include GST.
     gstMode: { type: String, enum: ['exclusive', 'inclusive'], default: 'exclusive' },
+    // Composition dealers cannot claim input tax credit, so this changes what the
+    // tax module may compute. Authoritative copy lives on TaxProfile; this mirror
+    // exists so billing can read it without a second lookup.
+    gstScheme: { type: String, enum: ['regular', 'composition', 'unregistered'], default: 'regular' },
     invoicePrefix: { type: String, trim: true, default: 'INV' },
     invoiceRoundOff: { type: Boolean, default: true },
     isActive: { type: Boolean, default: true },

@@ -28,6 +28,7 @@ const logsRoutes          = require('./modules/logs/logs.routes');
 const alertRoutes         = require('./modules/alerts/alert.routes');
 const parserRoutes        = require('./modules/parser/parser.routes');
 const insightsRoutes      = require('./modules/insights/insights.routes');
+const taxRoutes           = require('./modules/tax/tax.routes');
 const creditLedgerRoutes  = require('./modules/customers/creditLedger.routes');
 const erpAutomationRoutes = require('./modules/erp-automation/erp-automation.routes');
 
@@ -72,6 +73,7 @@ app.use('/api/notify',        notifyRoutes);
 app.use('/api/logs',          logsRoutes);
 app.use('/api/alerts',        alertRoutes);
 app.use('/api/parser',        parserRoutes);
+app.use('/api/tax',           taxRoutes);
 app.use('/api/insights',      insightsRoutes);
 app.use('/api/inventory',     inventoryRoutes);
 app.use('/api/credit-ledger',    creditLedgerRoutes);
