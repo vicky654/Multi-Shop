@@ -5,6 +5,7 @@ import { ShoppingCart, ArrowLeft, Check, Package } from 'lucide-react';
 import { shopApi } from '../../api/shop.api';
 import useCartStore from '../../store/cartStore';
 import toast from 'react-hot-toast';
+import { formatDiscountPct } from '../../utils/format';
 
 export default function ShopProductDetail() {
   const { id }    = useParams();
@@ -119,7 +120,7 @@ export default function ShopProductDetail() {
               {product.discount > 0 && (
                 <>
                   <span className="text-lg text-gray-400 line-through">₹{product.price.toLocaleString('en-IN')}</span>
-                  <span className="px-2.5 py-0.5 bg-red-100 text-red-600 text-sm font-bold rounded-full">{product.discount}% off</span>
+                  <span className="px-2.5 py-0.5 bg-red-100 text-red-600 text-sm font-bold rounded-full">{formatDiscountPct(product.discount)}% off</span>
                 </>
               )}
             </div>

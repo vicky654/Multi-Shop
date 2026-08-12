@@ -14,6 +14,7 @@ import useShopStore from '../store/shopStore';
 import InvoiceModal from '../components/InvoiceModal';
 import ShareModal from '../components/ShareModal';
 import { useSwipe } from '../hooks/useSwipe';
+import { formatDiscountPct } from '../utils/format';
 
 // ── Design tokens (dark surface, used throughout this page) ───────────────────
 // bg:   #0F172A  card: #1E293B  border: #334155  text: #E2E8F0  muted: #94A3B8
@@ -243,7 +244,7 @@ function OrderCard({ sale, onInvoice, onShare }) {
                         <span className="text-[#64748B] shrink-0">×{item.quantity}</span>
                         {item.discount > 0 && (
                           <span className="text-emerald-500 shrink-0 text-[10px]">
-                            -{item.discount}%
+                            -{formatDiscountPct(item.discount)}%
                           </span>
                         )}
                       </div>

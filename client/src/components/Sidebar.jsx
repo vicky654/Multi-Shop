@@ -253,7 +253,11 @@ export default function Sidebar({ open, onClose, onOpenSetup }) {
         {shopId && (
           <div className="px-2 pb-3">
             <a
-              href={`/shop?shopId=${shopId}`}
+              // Prefer the slug storefront: it is the maintained one, and it is
+              // what adapts to the shop's type (a shoe shop gets the footwear
+              // layout). `?shopId=` is the legacy page and only used by shops old
+              // enough to predate slug auto-generation.
+              href={activeShop?.slug ? `/shop/${activeShop.slug}` : `/shop?shopId=${shopId}`}
               target="_blank"
               rel="noopener noreferrer"
               onClick={onClose}

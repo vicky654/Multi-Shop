@@ -8,6 +8,7 @@ import {
 import toast from 'react-hot-toast';
 import { shopApi } from '../../api/shop.api';
 import useCartStore from '../../store/cartStore';
+import { formatDiscountPct } from '../../utils/format';
 
 export default function SlugProductDetail() {
   const { slug, id }  = useParams();
@@ -222,7 +223,7 @@ export default function SlugProductDetail() {
                       ₹{product.price.toLocaleString('en-IN')}
                     </span>
                     <span className="px-2.5 py-0.5 bg-red-100 text-red-600 text-sm font-bold rounded-full">
-                      {product.discount}% off
+                      {formatDiscountPct(product.discount)}% off
                     </span>
                   </>
                 )}

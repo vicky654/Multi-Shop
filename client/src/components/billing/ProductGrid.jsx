@@ -1,6 +1,7 @@
 import { memo, useState, useMemo } from 'react';
 import { Search, X, Package, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { formatDiscountPct } from '../../utils/format';
 
 // ── Product Card ──────────────────────────────────────────────────────────────
 const ProductCard = memo(function ProductCard({ product, inCart, onAdd }) {
@@ -47,7 +48,7 @@ const ProductCard = memo(function ProductCard({ product, inCart, onAdd }) {
         {/* Discount badge */}
         {product.discount > 0 && (
           <span className="absolute top-2 left-2 bg-red-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full shadow-sm">
-            -{product.discount}%
+            -{formatDiscountPct(product.discount)}%
           </span>
         )}
 

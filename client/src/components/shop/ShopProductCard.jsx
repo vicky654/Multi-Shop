@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { Link } from 'react-router-dom';
 import { ShoppingCart, Package, Check, SlidersHorizontal, Heart, Star } from 'lucide-react';
 import useWishlistStore from '../../store/wishlistStore';
+import { formatDiscountPct } from '../../utils/format';
 
 /**
  * ShopProductCard — the single product card used across the whole storefront.
@@ -65,7 +66,7 @@ const ShopProductCard = memo(function ShopProductCard({ product, slug, onAdd, in
           <div className="absolute top-2.5 left-2.5 flex flex-col gap-1.5 items-start">
             {discount > 0 && (
               <span className="bg-[var(--color-danger)] text-white text-[11px] font-bold px-2 py-1 rounded-lg shadow-sm leading-none">
-                {discount}% OFF
+                {formatDiscountPct(discount)}% OFF
               </span>
             )}
             {product.isNewArrival && (
@@ -187,7 +188,7 @@ const ShopProductCard = memo(function ShopProductCard({ product, slug, onAdd, in
               )}
             </div>
             {discount > 0 && (
-              <span className="text-[11px] font-bold text-[var(--color-success)]">{discount}% off</span>
+              <span className="text-[11px] font-bold text-[var(--color-success)]">{formatDiscountPct(discount)}% off</span>
             )}
           </div>
 

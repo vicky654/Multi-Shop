@@ -37,3 +37,31 @@ export const formatINR = (num, decimals = 0) =>
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   })}`;
+
+/**
+ * formatDiscountPct — a discount percentage fit for a price badge.
+ *
+ * WHY THIS EXISTS
+ *   A rupee discount is stored as its EXACT percentage equivalent so that
+ *   `price * (1 - pct/100)` reproduces the intended rupee figure to the paisa.
+ *   That is correct for billing and unreadable on a badge: ₹130 off ₹1,308 became
+ *   "-9.9388379...%", and every card rendering `{discount}%` printed it raw.
+ *
+ *   Whole numbers stay whole ("10%"), and a genuinely fractional rate keeps one
+ *   decimal ("9.9%") rather than being rounded into a claim the price contradicts.
+ *
+ * Examples:
+ *   10       → "10"
+ *   9.9388   → "9.9"
+ *   12.5     → "12.5"
+ *   0        → "0"
+ */
+export const formatDiscountPct = (pct) => {
+  const n = Number(pct);
+  if (!isFinite(n) || n <= 0) return '0';
+  const rounded = Math.round(n);
+  // Within a tenth of a whole number, show the whole number — this covers the
+  // common "10% off" case entered as a percentage.
+  if (Math.abs(n - rounded) < 0.05) return String(rounded);
+  return n.toFixed(1);
+};

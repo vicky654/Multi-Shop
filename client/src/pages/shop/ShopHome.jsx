@@ -1,4 +1,4 @@
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, Navigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ShoppingCart, ArrowRight, Tag, Flame, Sparkles, Star } from 'lucide-react';
 import { shopApi } from '../../api/shop.api';
@@ -25,7 +25,9 @@ function ProductCard({ product, shopId, onAddToCart }) {
         )}
         {product.discount > 0 && (
           <span className="absolute top-3 left-3 bg-red-500 text-white text-xs font-bold px-2.5 py-1 rounded-full shadow">
-            -{product.discount}%
+            {/* Rounded: a rupee discount is stored as its exact percentage
+                equivalent, which rendered as "-9.94%" on the badge. */}
+            -{Math.round(product.discount)}%
           </span>
         )}
         {product.isNewArrival && (
@@ -42,7 +44,8 @@ function ProductCard({ product, shopId, onAddToCart }) {
             {product.discount > 0 && (
               <p className="text-xs text-gray-400 line-through">₹{product.price.toLocaleString('en-IN')}</p>
             )}
-            <p className="text-lg font-bold text-gray-900">₹{fp.toLocaleString('en-IN')}</p>
+            {/* Whole rupees — the raw figure printed as ₹1,170.78 on a price tag. */}
+            <p className="text-lg font-bold text-gray-900">₹{Math.round(fp).toLocaleString('en-IN')}</p>
           </div>
           <button
             onClick={() => onAddToCart(product)}
@@ -159,10 +162,48 @@ function CategoryGrid({ shopId }) {
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
+/**
+ * ShopHome — the legacy `?shopId=` storefront.
+ *
+ * Superseded by the slug storefront (/shop/:slug → CustomerShop), which adapts
+ * to the shop's type: a footwear shop gets the editorial layout, everything else
+ * gets the marketplace grid. THIS page is hardcoded for apparel — fixed
+ * Men's/Women's/Kids' sections keyed on subCategory, and a hero that talks about
+ * "the latest trends" whatever the shop actually sells — so a shoe shop landing
+ * here saw empty apparel sections and generic copy.
+ *
+ * Rather than maintain a second storefront, this now forwards to the slug route
+ * whenever the shop has a slug (every shop created since slugs were
+ * auto-generated does). It only renders for the handful of older shops without
+ * one, so those still get a working page instead of a dead end.
+ */
 export default function ShopHome() {
   const [params] = useSearchParams();
   const shopId   = params.get('shopId');
   const addItem  = useCartStore((s) => s.addItem);
+
+  // Resolve the shop first so we know whether a slug exists to forward to.
+  const { data: shopData, isLoading: shopLoading } = useQuery({
+    queryKey: ['public-shop-by-id', shopId],
+    queryFn:  () => shopApi.getShopById(shopId),
+    enabled:  !!shopId,
+    staleTime: 5 * 60 * 1000,
+  });
+  const shop = shopData?.data?.shop;
+
+  // Hold the render until the lookup settles, otherwise the legacy layout
+  // flashes for a moment before the redirect.
+  if (shopId && shopLoading) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="w-8 h-8 rounded-full border-2 border-gray-200 border-t-blue-600 animate-spin" />
+      </div>
+    );
+  }
+
+  if (shop?.slug) {
+    return <Navigate to={`/shop/${shop.slug}`} replace />;
+  }
 
   const buildQuery = (extra) => ({ shopId: shopId || undefined, limit: 10, ...extra });
 

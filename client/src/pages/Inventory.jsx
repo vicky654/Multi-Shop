@@ -21,6 +21,7 @@ import ProductImportReviewModal from '../components/ProductImportReviewModal';
 import MiniTip from '../components/MiniTip';
 import StockAdjustModal from '../components/StockAdjustModal';
 import StockAuditPanel  from '../components/StockAuditPanel';
+import { formatDiscountPct } from '../utils/format';
 
 // ── Mobile product card ───────────────────────────────────────────────────────
 function ProductCard({ product: p, isSelected, onSelect, onEdit, onDuplicate, onDelete }) {
@@ -364,7 +365,7 @@ export default function Inventory() {
         <div>
           {r.discount > 0 && <p className="text-xs text-gray-400 line-through">₹{v.toLocaleString('en-IN')}</p>}
           <p className="font-semibold text-gray-900">₹{(v * (1 - (r.discount || 0) / 100)).toFixed(0)}</p>
-          {r.discount > 0 && <span className="text-[10px] bg-green-100 text-green-700 px-1 rounded">{r.discount}% off</span>}
+          {r.discount > 0 && <span className="text-[10px] bg-green-100 text-green-700 px-1 rounded">{formatDiscountPct(r.discount)}% off</span>}
         </div>
       ),
     },

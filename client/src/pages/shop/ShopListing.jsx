@@ -5,6 +5,7 @@ import { Search, SlidersHorizontal, X, ShoppingCart, ChevronDown } from 'lucide-
 import { shopApi } from '../../api/shop.api';
 import useCartStore from '../../store/cartStore';
 import toast from 'react-hot-toast';
+import { formatDiscountPct } from '../../utils/format';
 
 function ProductCard({ product, shopId }) {
   const addItem = useCartStore((s) => s.addItem);
@@ -32,7 +33,7 @@ function ProductCard({ product, shopId }) {
         )}
         {product.discount > 0 && (
           <span className="absolute top-2 left-2 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-            -{product.discount}%
+            -{formatDiscountPct(product.discount)}%
           </span>
         )}
         {product.stock < 1 && (
