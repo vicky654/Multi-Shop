@@ -4,6 +4,7 @@ const Expense    = require('../expenses/expense.model');
 const TaxProfile = require('./taxProfile.model');
 const { buildTaxSummary } = require('./tax.engine');
 const { resolveRules, financialYearOf, financialYearRange } = require('./taxRules');
+const purchaseService = require('../purchases/purchase.service');
 
 /**
  * Tax & profit aggregations.
@@ -230,11 +231,14 @@ async function getTaxSummary(user, shopId, { financialYear } = {}) {
     : profile.ruleSets?.[fy];
   const { rules, missing } = resolveRules(fy, stored || null);
 
-  const [sales, cogsInfo, expenses, turnover] = await Promise.all([
+  const [sales, cogsInfo, expenses, turnover, purchases, valuation] = await Promise.all([
     getSalesPosition(user, shopId, start, end),
     getCogs(user, shopId, start, end),
     getExpensePosition(user, shopId, start, end),
     getTurnoverByMode(user, shopId, start, end),
+    // Now that a purchase ledger exists, the Purchases term is real data.
+    purchaseService.getPurchaseTotals(user, shopId, start, end),
+    purchaseService.getStockValuation(user, shopId),
   ]);
 
   const summary = buildTaxSummary(
@@ -246,8 +250,10 @@ async function getTaxSummary(user, shopId, { financialYear } = {}) {
       expensesDeductible:    expenses.expensesDeductible,
       expensesReview:        expenses.expensesReview,
       expensesNonDeductible: expenses.expensesNonDeductible,
-      eligibleItc: expenses.eligibleItc,
-      reviewItc:   expenses.reviewItc,
+      // Purchase GST joins expense GST in the credit position — both are input tax,
+      // and both only count once a human has marked them eligible.
+      eligibleItc: expenses.eligibleItc + purchases.purchaseGstEligible,
+      reviewItc:   expenses.reviewItc   + purchases.purchaseGstReview,
       ...turnover,
       assets: [],   // Phase 2: BusinessAsset records feed depreciation
     },
@@ -260,9 +266,30 @@ async function getTaxSummary(user, shopId, { financialYear } = {}) {
     period: { financialYear: fy, start, end },
     counts: { ...expenses.counts, bills: sales.billCount, returns: sales.returnCount },
     cogsMethod: cogsInfo.cogsMethod,
+    purchases: {
+      value: purchases.purchasesValue,
+      units: purchases.units,
+      grnCount: purchases.count,
+      gstEligible: purchases.purchaseGstEligible,
+      gstReview: purchases.purchaseGstReview,
+      gstNotEligible: purchases.purchaseGstNotEligible,
+    },
+    stockValuation: valuation,
+    /**
+     * Opening + Purchases − Closing is now PARTLY available: purchases are real
+     * ledger data and closing stock can be valued. Opening stock cannot be
+     * reconstructed for a period that has already begun — there is no historical
+     * valuation snapshot to read. So the periodic figure is offered as a
+     * cross-check only once an opening snapshot exists for the year, and the
+     * sale-line method stays primary until then.
+     */
     periodicReconciliation: {
-      available: cogsInfo.periodicReconciliationAvailable,
-      blockedBy: cogsInfo.periodicReconciliationBlockedBy,
+      available: false,
+      purchasesValue: purchases.purchasesValue,
+      closingStockValue: valuation.closingStockValue,
+      blockedBy: 'Opening stock valuation for this year was never snapshotted. '
+        + 'Purchases and closing stock are now available; opening stock needs a '
+        + 'valuation recorded at the start of a financial year.',
     },
     itcNotEligible: expenses.notEligibleItc,
     // Names the exact rate paths still unset, so the UI can tell the owner what
