@@ -59,13 +59,26 @@ export function hydrateForm(product, fallbackShopId) {
   const hasColors = matrix.rows.some((r) => r !== '');
   const hasSizes  = matrix.cols.some((c) => c !== '');
 
+  // For a variant product the AXES MUST COME FROM THE MATRIX, not from the
+  // sizes[]/colors[] tag arrays. Those two can legitimately disagree — colors[]
+  // is a storefront filter tag, variantStock is actual stock — and seeding the
+  // selectors from the tags would make the very first axis edit rebuild the grid
+  // against a different set of columns and silently drop the user's quantities.
+  const matrixColors = product.trackVariantStock && hasColors
+    ? matrix.rows.map((name) =>
+        (product.colors || []).find((c) => c.name === name) || { name, hex: '#6b7280' })
+    : (product.colors || []);
+  const matrixSizes = product.trackVariantStock && hasSizes
+    ? matrix.cols
+    : (product.sizes || []);
+
   return {
     ...EMPTY_WIZARD_FORM,
     ...product,
     shopId:  product.shopId?._id || product.shopId || fallbackShopId || '',
     images:  product.images?.length ? product.images : (product.image ? [product.image] : []),
-    sizes:   product.sizes  || [],
-    colors:  product.colors || [],
+    sizes:   matrixSizes,
+    colors:  matrixColors,
     hasVariants: !!product.trackVariantStock,
     variantAxis: hasColors && hasSizes ? 'both' : hasSizes ? 'size' : 'color',
     // A saved variant product already reconciles, so seed the cross-check with

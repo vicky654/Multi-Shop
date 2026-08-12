@@ -37,6 +37,9 @@ export function ProductWizard({
   shops = [], shopId, categories = [], isEdit = false, productId,
 }) {
   const [step, setStep] = useState(1);
+  // Error badges only appear on steps the user has actually been to. Flagging
+  // step 3 as "2 errors" before they have seen it just reads as broken.
+  const [visited, setVisited] = useState(() => new Set([1]));
   const { activeShop } = useShopStore();
 
   const wiz = useProductWizard({
@@ -63,21 +66,25 @@ export function ProductWizard({
     if (rawIdx === -1) setStep(1);
   }, [rawIdx]);
 
+  const goTo = (n) => {
+    setStep(n);
+    setVisited((v) => new Set(v).add(n));
+  };
   const goNext = () => {
     if (!wiz.canAdvance(safeStep)) return;
     const next = visibleSteps[idx + 1];
-    if (next) setStep(next.n);
+    if (next) goTo(next.n);
   };
   const goBack = () => {
     const prev = visibleSteps[idx - 1];
-    if (prev) setStep(prev.n);
+    if (prev) goTo(prev.n);
   };
 
   const handleSave = (e) => {
     e.preventDefault();
     // Everything is validated inline; this is the last gate before the request.
     const firstBad = visibleSteps.find((s) => !wiz.canAdvance(s.n));
-    if (firstBad) { setStep(firstBad.n); return; }
+    if (firstBad) { goTo(firstBad.n); return; }
     onSubmit(wiz.toPayload(), wiz.clearDraft);
   };
 
@@ -92,14 +99,14 @@ export function ProductWizard({
           const Icon    = s.icon;
           const active  = s.n === safeStep;
           const done    = i < idx;
-          const errCount = wiz.stepErrors[s.n] || 0;
+          const errCount = visited.has(s.n) ? (wiz.stepErrors[s.n] || 0) : 0;
           return (
             <div key={s.n} className="flex items-center shrink-0">
               <button
                 type="button"
                 // Jumping forward past validation would land the user on Review
                 // with an unsaveable product, so only completed steps are links.
-                onClick={() => (done || active) && setStep(s.n)}
+                onClick={() => (done || active) && goTo(s.n)}
                 disabled={!done && !active}
                 className={`flex items-center gap-2 px-2.5 sm:px-3 h-9 rounded-xl text-sm font-medium transition ${
                   active ? 'bg-blue-600 text-white shadow-sm'
@@ -153,7 +160,7 @@ export function ProductWizard({
         {safeStep === 5 && (
           <StepReview form={form} matrix={wiz.matrix} totals={wiz.totals}
             pricing={wiz.pricing} variantPricing={wiz.variantPricing}
-            summary={wiz.summary} shops={shops} onJumpToStep={setStep} />
+            summary={wiz.summary} shops={shops} onJumpToStep={goTo} />
         )}
       </div>
 
