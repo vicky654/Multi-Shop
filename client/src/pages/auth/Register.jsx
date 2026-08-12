@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { User, Mail, Lock, Phone } from 'lucide-react';
+import { User, Mail, Lock, Phone, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import useAuthStore from '../../store/authStore';
 
@@ -8,6 +8,7 @@ export default function Register() {
   const { register } = useAuthStore();
   const navigate = useNavigate();
   const [form, setForm] = useState({ name: '', email: '', password: '', phone: '' });
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const upd = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -39,22 +40,39 @@ export default function Register() {
       <p className="text-gray-500 text-sm mb-8">Register as a shop owner to get started</p>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {fields.map(({ key, label, icon: Icon, type, placeholder }) => (
-          <div key={key}>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-            <div className="relative">
-              <Icon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type={type}
-                required={key !== 'phone'}
-                value={form[key]}
-                onChange={(e) => upd(key, e.target.value)}
-                placeholder={placeholder}
-                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+        {fields.map(({ key, label, icon: Icon, type, placeholder }) => {
+          const isPassword = key === 'password';
+          return (
+            <div key={key}>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+              <div className="relative">
+                <Icon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type={isPassword && showPassword ? 'text' : type}
+                  required={key !== 'phone'}
+                  data-testid={`${key}-input`}
+                  value={form[key]}
+                  onChange={(e) => upd(key, e.target.value)}
+                  placeholder={placeholder}
+                  // Extra right padding on the password field so the value never
+                  // runs underneath the reveal button.
+                  className={`w-full pl-10 ${isPassword ? 'pr-10' : 'pr-4'} py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                />
+                {isPassword && (
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         <button
           type="submit"

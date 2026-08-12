@@ -3,6 +3,7 @@ const cors    = require('cors');
 const morgan  = require('morgan');
 const { errorHandler, notFound } = require('./middlewares/error.middleware');
 const sanitize                   = require('./middlewares/sanitize.middleware');
+const { corsOptions }            = require('./config/cors');
 
 // Route imports
 const authRoutes          = require('./modules/auth/auth.routes');
@@ -32,28 +33,12 @@ const erpAutomationRoutes = require('./modules/erp-automation/erp-automation.rou
 
 const app = express();
 
-// ── CORS — allow localhost dev + any configured production URL ─────────────────
-const ALLOWED_ORIGINS = [
-  'http://localhost:4000',
-  'http://localhost:3000',
-  'http://localhost:5001',
-  'http://127.0.0.1:4000',
-  'https://multishop-backend-9jbg.onrender.com',
-  'https://multi-shop-tawny.vercel.app',
-  // Production frontends — add your Vercel / Netlify URL in CLIENT_URL env var
-  // e.g. CLIENT_URL=https://multi-shop-tawny.vercel.app
-  ...(process.env.CLIENT_URL ? process.env.CLIENT_URL.split(',').map((u) => u.trim()) : []),
-];
-
-app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, Postman, server-to-server)
-    if (!origin) return callback(null, true);
-    if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
-    callback(new Error(`CORS: origin "${origin}" not allowed`));
-  },
-  credentials: true,
-}));
+// ── CORS ───────────────────────────────────────────────────────────────────────
+// Policy and its tests live in config/cors.js. It allows localhost dev, the
+// stable production alias, anything in CLIENT_URL, and — crucially — this Vercel
+// scope's per-deployment hostnames, which is what /register and /login were
+// failing on with a bare "Network Error".
+app.use(cors(corsOptions));
 
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true }));
