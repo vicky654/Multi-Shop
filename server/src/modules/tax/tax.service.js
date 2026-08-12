@@ -241,6 +241,10 @@ async function getTaxSummary(user, shopId, { financialYear } = {}) {
     purchaseService.getStockValuation(user, shopId),
   ]);
 
+  // Opening stock is the one term that cannot be reconstructed — it must have been
+  // snapshotted. With it, the periodic COGS figure becomes a real cross-check.
+  const openingStock = await purchaseService.getOpeningStock(user, shopId, fy);
+
   const summary = buildTaxSummary(
     {
       grossSales:   sales.grossSales,
@@ -283,14 +287,35 @@ async function getTaxSummary(user, shopId, { financialYear } = {}) {
      * cross-check only once an opening snapshot exists for the year, and the
      * sale-line method stays primary until then.
      */
-    periodicReconciliation: {
-      available: false,
-      purchasesValue: purchases.purchasesValue,
-      closingStockValue: valuation.closingStockValue,
-      blockedBy: 'Opening stock valuation for this year was never snapshotted. '
-        + 'Purchases and closing stock are now available; opening stock needs a '
-        + 'valuation recorded at the start of a financial year.',
-    },
+    openingStock: openingStock
+      ? { value: openingStock.value, units: openingStock.units,
+          takenAt: openingStock.takenAt, takenLate: openingStock.takenLate }
+      : null,
+    periodicReconciliation: openingStock
+      ? {
+          available: true,
+          openingStockValue: openingStock.value,
+          purchasesValue: purchases.purchasesValue,
+          closingStockValue: valuation.closingStockValue,
+          periodicCogs: Math.round(
+            (openingStock.value + purchases.purchasesValue - valuation.closingStockValue) * 100
+          ) / 100,
+          // Reported, not silently reconciled: a gap between the two methods is
+          // real information (shrinkage, damage, unrecorded movement).
+          saleLineCogs: cogsInfo.cogs,
+          note: openingStock.takenLate
+            ? 'Opening stock was snapshotted after the year began, so it approximates the '
+              + 'position on 1 April rather than measuring it.'
+            : null,
+        }
+      : {
+          available: false,
+          purchasesValue: purchases.purchasesValue,
+          closingStockValue: valuation.closingStockValue,
+          blockedBy: 'Opening stock for this year has not been recorded. '
+            + 'Use "Record Opening Stock" on the Purchases screen; purchases and closing '
+            + 'stock are already available.',
+        },
     itcNotEligible: expenses.notEligibleItc,
     // Names the exact rate paths still unset, so the UI can tell the owner what
     // to ask their accountant for instead of a vague "not configured".

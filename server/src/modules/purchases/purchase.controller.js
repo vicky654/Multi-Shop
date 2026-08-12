@@ -42,4 +42,13 @@ const valuation = asyncHandler(async (req, res) => {
   success(res, data, 'Stock valuation');
 });
 
-module.exports = { getAll, create, update, post, cancel, valuation };
+const openingSnapshot = asyncHandler(async (req, res) => {
+  const snap = await svc.recordOpeningSnapshot(req.user, req.body.shopId, {
+    financialYear: req.body.financialYear, note: req.body.note,
+  });
+  logAction(req, LOG_ACTIONS.PRODUCT_UPDATE, 'purchases',
+    `Opening stock snapshot recorded for FY ${snap.financialYear}: ${snap.units} units / ${snap.value}`);
+  success(res, { snapshot: snap }, 'Opening stock recorded');
+});
+
+module.exports = { getAll, create, update, post, cancel, valuation, openingSnapshot };

@@ -182,6 +182,39 @@ export default function TaxProfit() {
         </div>
       </section>
 
+      {/* ── Purchases & stock ──────────────────────────────────────────────── */}
+      <section className="ui-card p-0 overflow-hidden">
+        <SectionHead title="Purchases & stock" right={`${s.purchases?.grnCount ?? 0} GRN(s)`} />
+        <div className="p-4 sm:p-5 space-y-0.5 max-w-2xl">
+          <Line label="Opening Stock"
+            value={s.openingStock ? inr(s.openingStock.value) : 'Not recorded'}
+            tone={s.openingStock ? undefined : 'amber'} />
+          <Line label={`Purchases (${s.purchases?.units ?? 0} units received)`}
+            value={inr(s.purchases?.value)} />
+          <Line label="Closing Stock (valued now)" value={inr(s.stockValuation?.closingStockValue)} />
+          {s.periodicReconciliation?.available ? (
+            <div className="pt-2 mt-1 border-t-2 border-gray-900">
+              <Line label="COGS (Opening + Purchases − Closing)"
+                value={inr(s.periodicReconciliation.periodicCogs)} strong big />
+              <p className="text-xs text-gray-500 pt-2 leading-relaxed">
+                Cross-check against the sale-line figure of {inr(s.cogs)} — a gap indicates
+                shrinkage, damage or unrecorded movement.
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-amber-800 mt-3 p-2.5 rounded-lg bg-amber-50 border border-amber-200 leading-relaxed">
+              <b>Opening + Purchases − Closing is not available.</b>{' '}
+              {s.periodicReconciliation?.blockedBy}
+            </p>
+          )}
+          {s.purchases?.gstReview > 0 && (
+            <p className="text-[11px] text-amber-700 pt-2">
+              {inr(s.purchases.gstReview)} of purchase GST awaits review — not counted as credit.
+            </p>
+          )}
+        </div>
+      </section>
+
       {/* ── COGS basis. Honest about the method actually used. ──────────────── */}
       <section className="ui-card p-4 sm:p-5">
         <p className="text-sm font-bold text-gray-800 flex items-center gap-2">

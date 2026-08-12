@@ -16,6 +16,7 @@ const Inventory   = lazy(() => import('../pages/Inventory'));
 const Billing     = lazy(() => import('../pages/Billing'));
 const Customers   = lazy(() => import('../pages/Customers'));
 const Expenses    = lazy(() => import('../pages/Expenses'));
+const Purchases = lazy(() => import('../pages/Purchases'));
 const TaxProfit = lazy(() => import('../pages/TaxProfit'));
 const Reports     = lazy(() => import('../pages/Reports'));
 const Settings    = lazy(() => import('../pages/Settings'));
@@ -102,7 +103,8 @@ export default function AppRoutes() {
             <Route path="/orders"       element={<Orders />} />
             <Route path="/customers"    element={<Customers />} />
             <Route path="/expenses"     element={<Expenses />} />
-            <Route path="/tax" element={<TaxProfit />} />
+            <Route path="/purchases" element={<Purchases />} />
+          <Route path="/tax" element={<TaxProfit />} />
           <Route path="/reports"      element={<Reports />} />
             <Route path="/settings"     element={<Settings />} />
             <Route path="/ai-insights"  element={<AiInsights />} />

@@ -12,6 +12,8 @@ const STOCK_ROLES = ['super_admin', 'owner', 'manager', 'inventory_staff'];
 
 router.get('/',          allowRoles(...STOCK_ROLES), ctrl.getAll);
 router.get('/valuation', allowRoles('super_admin', 'owner', 'manager'), ctrl.valuation);
+// Owner/admin only: this figure feeds the COGS calculation.
+router.post('/opening-snapshot', allowRoles('super_admin', 'owner'), ctrl.openingSnapshot);
 router.post('/',         allowRoles(...STOCK_ROLES), ctrl.create);
 router.put('/:id',       allowRoles(...STOCK_ROLES), ctrl.update);
 // Posting and cancelling MOVE INVENTORY, so they are narrower than editing a draft.

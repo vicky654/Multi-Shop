@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
 const Purchase = require('./purchase.model');
 const Product  = require('../products/product.model');
+const OpeningStock = require('./openingStock.model');
+const { financialYearOf, financialYearRange } = require('../tax/taxRules');
 
 /**
  * Purchase / GRN service.
@@ -472,7 +474,42 @@ async function getStockValuation(user, shopId) {
   };
 }
 
+/**
+ * Record the current inventory valuation as this financial year's opening stock.
+ * Writes nothing but the snapshot — sales, purchases and stock are untouched.
+ */
+async function recordOpeningSnapshot(user, shopId, { financialYear, note } = {}) {
+  assertShopAccess(user, shopId);
+  const fy = financialYear || financialYearOf();
+  const { start } = financialYearRange(fy);
+
+  const v = await getStockValuation(user, shopId);
+
+  const doc = await OpeningStock.findOneAndUpdate(
+    { shopId: oid(shopId), financialYear: fy },
+    {
+      units: v.closingUnits,
+      value: v.closingStockValue,
+      takenAt: new Date(),
+      takenBy: user._id,
+      takenByName: user.name || '',
+      note: note || '',
+      // Taken after 1 April, so it approximates the opening position.
+      takenLate: Date.now() > start.getTime(),
+    },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  );
+  return doc;
+}
+
+/** The stored opening snapshot for a year, or null. */
+async function getOpeningStock(user, shopId, financialYear) {
+  if (!shopId) return null;
+  return OpeningStock.findOne({ shopId: oid(shopId), financialYear }).lean();
+}
+
 module.exports = {
+  recordOpeningSnapshot, getOpeningStock,
   createPurchase, updatePurchase, postPurchase, cancelPurchase,
   getPurchases, getPurchaseTotals, getStockValuation,
   // Exported for tests.
