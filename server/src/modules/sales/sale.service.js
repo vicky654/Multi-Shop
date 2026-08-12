@@ -701,6 +701,10 @@ const getSales = async (user, query) => {
     Sale.find(filter)
       .populate('customerId', 'name phone')
       .populate('staffId', 'name')
+      // The Orders page opens the printable invoice straight from this list, so
+      // without the shop the receipt header rendered the literal fallback "Shop"
+      // instead of the shop's name, address and GSTIN — on every printed copy.
+      .populate('shopId', 'name address phone currency logo gstNumber')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit)),
