@@ -1,4 +1,5 @@
 const Product = require('./product.model');
+const { normalizeProductPayload } = require('./product.normalize');
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 const buildFilter = (user, shopId, query) => {
@@ -80,7 +81,10 @@ const createProduct = async (user, data) => {
   if (user.role !== 'super_admin' && !user.shops.some((s) => s.toString() === data.shopId)) {
     throw Object.assign(new Error('No access to this shop'), { status: 403 });
   }
-  return Product.create({ ...data, ownerId: user.role === 'super_admin' ? data.ownerId : user._id });
+  // Normalise before create so a variant product's root stock is the matrix sum
+  // from the very first save, never a client-supplied guess.
+  const clean = normalizeProductPayload(data);
+  return Product.create({ ...clean, ownerId: user.role === 'super_admin' ? data.ownerId : user._id });
 };
 
 const updateProduct = async (id, user, data) => {
@@ -89,7 +93,11 @@ const updateProduct = async (id, user, data) => {
   if (user.role !== 'super_admin' && !user.shops.some((s) => s.toString() === product.shopId.toString()))
     throw Object.assign(new Error('Access denied'), { status: 403 });
 
-  Object.assign(product, data);
+  // The existing doc is passed in so a PARTIAL update cannot break the
+  // stock === sum(variantStock) invariant: normalizeProductPayload only emits
+  // keys the caller actually sent, and refuses a bare `stock` write on a
+  // variant-tracked product instead of letting root drift from the matrix.
+  Object.assign(product, normalizeProductPayload(data, product.toObject()));
   await product.save();
   return product;
 };
