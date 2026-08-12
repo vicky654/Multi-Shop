@@ -43,6 +43,7 @@ export default function SlugListing() {
   const q          = params.get('q')          || '';
   const sort       = params.get('sort')       || '';
   const maxPrice   = params.get('maxPrice')   || '';
+  const size       = params.get('size')       || '';
   const discounted = params.get('discounted') === '1';
   const inStock    = params.get('inStock')    === '1';
 
@@ -51,7 +52,7 @@ export default function SlugListing() {
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => { setSearchInput(q); }, [q]);
-  useEffect(() => { setVisible(PAGE); }, [category, q, sort, maxPrice, discounted, inStock]);
+  useEffect(() => { setVisible(PAGE); }, [category, q, sort, maxPrice, size, discounted, inStock]);
   useEffect(() => {
     document.body.style.overflow = filtersOpen ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
@@ -97,11 +98,45 @@ export default function SlugListing() {
 
   const fp = (p) => p.price * (1 - (p.discount || 0) / 100);
 
+  /** Purchasable sizes across the fetched set, numerically then alphabetically. */
+  const availableSizes = useMemo(() => {
+    const set = new Set();
+    for (const p of all) {
+      if (p.trackVariantStock && p.variantStock?.length) {
+        p.variantStock.forEach((v) => { if (v.stock > 0 && v.size) set.add(String(v.size)); });
+      } else {
+        (p.sizes || []).forEach((s) => set.add(String(s)));
+      }
+    }
+    const LETTER = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
+    return [...set].sort((a, b) => {
+      const na = parseFloat(a), nb = parseFloat(b);
+      if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+      const ia = LETTER.indexOf(a.toUpperCase()), ib = LETTER.indexOf(b.toUpperCase());
+      if (ia !== -1 && ib !== -1) return ia - ib;
+      return a.localeCompare(b);
+    });
+  }, [all]);
+
+  /**
+   * Does this product have the requested size available to buy?
+   * With per-variant stock, only cells with stock count — offering a size the
+   * shopper cannot actually purchase is worse than excluding the product.
+   */
+  const hasSize = useCallback((p, want) => {
+    const target = String(want).toLowerCase();
+    if (p.trackVariantStock && p.variantStock?.length) {
+      return p.variantStock.some((v) => v.stock > 0 && String(v.size).toLowerCase() === target);
+    }
+    return (p.sizes || []).some((s) => String(s).toLowerCase() === target);
+  }, []);
+
   const results = useMemo(() => {
     let list = all;
     if (discounted) list = list.filter((p) => (p.discount || 0) > 0);
     if (inStock)    list = list.filter((p) => p.stock > 0);
     if (maxPrice)   list = list.filter((p) => fp(p) <= Number(maxPrice));
+    if (size)       list = list.filter((p) => hasSize(p, size));
 
     list = [...list];
     if (sort === 'price_asc')  list.sort((a, b) => fp(a) - fp(b));
@@ -109,7 +144,7 @@ export default function SlugListing() {
     if (sort === 'discount')   list.sort((a, b) => (b.discount || 0) - (a.discount || 0));
     if (sort === 'newest')     list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     return list;
-  }, [all, discounted, inStock, maxPrice, sort]);
+  }, [all, discounted, inStock, maxPrice, size, sort, hasSize]);
 
   const cartQty = useMemo(() => {
     const m = {};
@@ -123,7 +158,7 @@ export default function SlugListing() {
   }, [addItem]);
 
   const activeFilterCount =
-    (category ? 1 : 0) + (discounted ? 1 : 0) + (inStock ? 1 : 0) + (maxPrice ? 1 : 0);
+    (category ? 1 : 0) + (discounted ? 1 : 0) + (inStock ? 1 : 0) + (maxPrice ? 1 : 0) + (size ? 1 : 0);
 
   const clearAll = () => setParams(q ? { q } : {}, { replace: true });
 
@@ -163,6 +198,28 @@ export default function SlugListing() {
           </span>
         </div>
       </FilterGroup>
+
+      {/* Only the sizes actually purchasable in the current result set, so the
+          panel can never offer a dead filter. */}
+      {availableSizes.length > 0 && (
+        <FilterGroup title="Size">
+          <div className="flex flex-wrap gap-2">
+            {availableSizes.map((s) => (
+              <button
+                key={s}
+                onClick={() => setParam('size', size === s ? '' : s)}
+                className={`min-w-[2.75rem] h-10 px-2 rounded-lg text-sm font-bold border transition ${
+                  size === s
+                    ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
+                    : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-primary)]'
+                }`}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </FilterGroup>
+      )}
 
       <FilterGroup title="Offers">
         <FilterRow active={discounted} onClick={() => setParam('discounted', !discounted)}>

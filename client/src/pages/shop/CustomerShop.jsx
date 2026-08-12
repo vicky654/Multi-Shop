@@ -13,6 +13,14 @@ import ShopBottomNav from '../../components/shop/ShopBottomNav';
 import { PromoCarousel, CategoryStrip, ShopSection } from '../../components/shop/ShopSections';
 import { FlashSaleSection, TabbedSection, PromoStrip } from '../../components/shop/FlashAndTabs';
 import useWishlistStore from '../../store/wishlistStore';
+import FootwearShop from './FootwearShop';
+
+/**
+ * Shop types that get the brand-led editorial storefront instead of the generic
+ * marketplace grid. A footwear range is browsed by collection, colour and size
+ * rather than searched, so the layout differs enough to warrant its own page.
+ */
+const EDITORIAL_TYPES = new Set(['shoes']);
 
 const GRID = 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 sm:gap-4';
 /** Rail cards need an explicit width — they sit in a horizontal flex scroller. */
@@ -140,6 +148,20 @@ export default function CustomerShop() {
           <ArrowLeft className="w-4 h-4" /> Go back
         </button>
       </div>
+    );
+  }
+
+  // A shoe shop gets the editorial storefront. Delegated after the shop has
+  // loaded (its `type` is what decides) and after the not-found guard, so both
+  // layouts share one fetch, one error path and one loading skeleton.
+  if (EDITORIAL_TYPES.has(shop.type)) {
+    return (
+      <FootwearShop
+        shop={shop}
+        slug={slug}
+        products={all}
+        productsLoading={productsLoading}
+      />
     );
   }
 
