@@ -11,6 +11,20 @@ const variantStockSchema = new mongoose.Schema(
     size:  { type: String, default: '' },   // '' means "no size"
     color: { type: String, default: '' },   // color name, '' means "no color"
     stock: { type: Number, default: 0, min: 0 },
+
+    // ── Optional per-variant pricing ──────────────────────────────────────────
+    // null means "inherit the product-level value". These MUST NOT default to 0:
+    // a 0 `price` would sell the variant for free and a 0 `costPrice` would
+    // report fake profit on every sale. sale.service.js reads them as
+    //     variant?.price ?? product.price
+    // so null is what makes the fallback work. Only populated when
+    // hasVariantPricing is true; product.normalize.js strips them otherwise.
+    costPrice:     { type: Number, default: null, min: 0 },
+    price:         { type: Number, default: null, min: 0 },
+    discount:      { type: Number, default: null, min: 0, max: 100 }, // canonical %
+    // Kept only so the wizard reopens showing "₹200 off" rather than "15.384%".
+    discountType:  { type: String, enum: ['none', 'percent', 'fixed', null], default: null },
+    discountValue: { type: Number, default: null, min: 0 },
   },
   { _id: false }
 );
@@ -48,6 +62,23 @@ const productSchema = new mongoose.Schema(
     reorderPoint:  { type: Number, default: 0 },               // auto-reorder trigger
     minStock:      { type: Number, default: 0 },
     maxStock:      { type: Number, default: 0 },
+
+    // ── Wizard pricing fields ──────────────────────────────────────────────────
+    brand:         { type: String, trim: true, default: '' },
+    // The markup the user actually typed, retained so the wizard reopens showing
+    // "30%" instead of re-deriving it from price/cost. `price` stays authoritative.
+    profitPercent: { type: Number, default: null, min: 0 },
+    // `discount` above remains the CANONICAL percent that billing reads. These
+    // two exist only so a rupee discount reopens as "₹200 off" rather than
+    // "15.384%" — product.normalize.js keeps `discount` in sync with them.
+    discountType:  { type: String, enum: ['none', 'percent', 'fixed'], default: 'none' },
+    discountValue: { type: Number, default: 0, min: 0 },
+    // null = no product-level rate, so billing falls back to the invoice taxRate.
+    // Defaulting this to 0 would silently zero the tax on every product that
+    // existed before this field did — hence null, and `== null` checks in billing.
+    gstRate:       { type: Number, default: null, min: 0, max: 100 },
+    hasVariantPricing: { type: Boolean, default: false },
+
     shopId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Shop', required: true },
     ownerId:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     isActive:     { type: Boolean, default: true },
@@ -96,7 +127,8 @@ productSchema.index({ subCategory: 1, shopId: 1 });
 productSchema.index({ isFeatured: 1, shopId: 1 });
 productSchema.index({ isTrending: 1, shopId: 1 });
 productSchema.index({ isNewArrival: 1, shopId: 1 });
-productSchema.index({ name: 'text', category: 'text', description: 'text', sku: 'text', barcode: 'text' });
+productSchema.index({ name: 'text', category: 'text', description: 'text', sku: 'text', barcode: 'text', brand: 'text' });
+productSchema.index({ shopId: 1, brand: 1 });
 // Low-stock queries: { isActive:1, stock:1, shopId:1 } — used by alerts & insights
 productSchema.index({ shopId: 1, isActive: 1, stock: 1 });
 // ERP phase: sorting by most-recently modified, fast pagination
