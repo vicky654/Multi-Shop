@@ -26,7 +26,7 @@ export default function NewBillButton() {
       onClick={() => navigate('/billing')}
       data-testid="global-new-bill"
       title="New Bill — POS Billing (Ctrl+B)"
-      className="fixed bottom-20 right-4 lg:bottom-6 lg:right-6 z-30 flex items-center gap-2 pl-4 pr-5 py-3
+      className="nav-fab fixed bottom-20 right-4 lg:bottom-6 lg:right-6 z-30 flex items-center gap-2 pl-4 pr-5 py-3
                  bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-2xl
                  shadow-lg shadow-blue-600/30 font-bold text-sm transition"
     >

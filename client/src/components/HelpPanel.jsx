@@ -221,7 +221,7 @@ export default function HelpPanel() {
         onClick={() => setOpen((v) => !v)}
         whileTap={{ scale: 0.92 }}
         aria-label="Help"
-        className={`fixed bottom-20 right-4 md:bottom-6 z-40 w-12 h-12 rounded-full shadow-xl flex items-center justify-center transition-all ${
+        className={`nav-fab fixed bottom-20 right-4 md:bottom-6 z-40 w-12 h-12 rounded-full shadow-xl flex items-center justify-center transition-all ${
           open
             ? 'bg-gray-900 text-white shadow-black/30'
             : 'bg-white border border-gray-200 text-gray-600 shadow-gray-200/80 hover:bg-gray-50'

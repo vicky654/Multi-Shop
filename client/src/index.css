@@ -176,6 +176,18 @@ html.dark {
   html.dark .text-slate-800    { color: var(--color-text)           !important; }
 }
 
+/* ── Navigation position: keep floating buttons clear of a bottom nav bar ──
+   The nav bar for `position: bottom` is a flex sibling, but these action buttons
+   are fixed to the VIEWPORT, so at lg they would sit on top of it. The store
+   stamps nav-<position> on <html>, which is what this hooks.
+
+   margin-bottom rather than transform: these buttons already animate with
+   framer-motion / hover scales, and a transform here would be overwritten. On a
+   fixed element with `bottom` set, margin-bottom offsets it by that much. */
+@media (min-width: 1024px) {
+  html.nav-bottom .nav-fab { margin-bottom: 3.5rem; }  /* bar is h-14 */
+}
+
 /* ═══════════════════════════════════════════════════════════════
    COMPONENT LAYER  — reusable design system classes
    New code should use these; existing code will gradually adopt.

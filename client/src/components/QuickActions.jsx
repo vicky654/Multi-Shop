@@ -18,7 +18,7 @@ export default function QuickActions() {
   };
 
   return (
-    <div className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-40 flex flex-col items-end gap-3">
+    <div className="nav-fab fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-40 flex flex-col items-end gap-3">
       {/* Action buttons (shown when open) */}
       {open && (
         <div className="flex flex-col items-end gap-2">
