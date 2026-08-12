@@ -17,6 +17,9 @@ router.use(shopAccess);
 router.get('/', ctrl.getAll);
 router.get('/summary', ctrl.getSummary);
 router.post('/', allowRoles('super_admin', 'owner', 'manager'), ctrl.create);
+// Bulk route first: '/classify-bulk' must not be captured by '/:id/...'.
+router.patch('/classify-bulk', allowRoles('super_admin', 'owner', 'manager'), ctrl.classifyBulk);
+router.patch('/:id/classify',  allowRoles('super_admin', 'owner', 'manager'), ctrl.classify);
 router.put('/:id', allowRoles('super_admin', 'owner', 'manager'), ctrl.update);
 router.delete('/:id', allowRoles('super_admin', 'owner'), ctrl.remove);
 

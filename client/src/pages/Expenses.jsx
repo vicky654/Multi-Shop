@@ -7,11 +7,12 @@ import { expensesApi } from '../api/expenses.api';
 import useShopStore from '../store/shopStore';
 import DataTable from '../components/DataTable';
 import Modal from '../components/Modal';
+import ExpenseForm, { EMPTY_EXPENSE } from '../components/expenses/ExpenseForm';
 import StatCard from '../components/StatCard';
 
 const TYPES = ['rent', 'electricity', 'salary', 'maintenance', 'supplies', 'other'];
 const TYPE_ICONS = { rent: '🏠', electricity: '⚡', salary: '💰', maintenance: '🔧', supplies: '📦', other: '📝' };
-const EMPTY = { type: 'rent', amount: '', date: format(new Date(), 'yyyy-MM-dd'), description: '', shopId: '' };
+const EMPTY = { ...EMPTY_EXPENSE, date: format(new Date(), 'yyyy-MM-dd') };
 
 export default function Expenses() {
   const qc = useQueryClient();
@@ -60,7 +61,9 @@ export default function Expenses() {
   });
 
   const openCreate = () => { setEditExpense(null); setForm({ ...EMPTY, shopId }); setShowModal(true); };
-  const openEdit   = (e) => { setEditExpense(e); setForm({ ...e, date: format(new Date(e.date), 'yyyy-MM-dd'), shopId: e.shopId?._id || e.shopId }); setShowModal(true); };
+  const openEdit   = (e) => { setEditExpense(e); setForm({ ...EMPTY, ...e, date: format(new Date(e.date), 'yyyy-MM-dd'),
+      invoiceDate: e.invoiceDate ? format(new Date(e.invoiceDate), 'yyyy-MM-dd') : '',
+      shopId: e.shopId?._id || e.shopId }); setShowModal(true); };
   const closeModal = () => { setShowModal(false); setEditExpense(null); };
   const handleSubmit = (ev) => { ev.preventDefault(); editExpense ? updateMut.mutate({ id: editExpense._id, data: form }) : createMut.mutate(form); };
 
@@ -107,40 +110,15 @@ export default function Expenses() {
 
       <DataTable columns={columns} data={expenses} loading={isLoading} emptyMessage="No expenses recorded yet" />
 
-      <Modal open={showModal} onClose={closeModal} title={editExpense ? 'Edit Expense' : 'Add Expense'}>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Expense Type *</label>
-            <select required value={form.type} onChange={(e) => upd('type', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-              {TYPES.map((t) => <option key={t} value={t}>{TYPE_ICONS[t]} {t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
-            </select>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Amount (₹) *</label>
-              <input required type="number" min="0" value={form.amount} onChange={(e) => upd('amount', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
-              <input required type="date" value={form.date} onChange={(e) => upd('date', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Shop *</label>
-            <select required value={form.shopId} onChange={(e) => upd('shopId', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="">Select shop</option>
-              {shops.map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-            <textarea value={form.description} onChange={(e) => upd('description', e.target.value)} rows={2} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
-          </div>
-          <button type="submit" disabled={createMut.isPending || updateMut.isPending} className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-semibold rounded-lg transition flex items-center justify-center gap-2">
-            {(createMut.isPending || updateMut.isPending) && <span className="animate-spin w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />}
-            Save Expense
-          </button>
-        </form>
+      <Modal size="lg" open={showModal} onClose={closeModal} title={editExpense ? 'Edit Expense' : 'Add Expense'}>
+        <ExpenseForm
+          form={form}
+          setForm={setForm}
+          onSubmit={handleSubmit}
+          loading={createMut.isPending || updateMut.isPending}
+          shops={shops}
+          shopId={shopId}
+        />
       </Modal>
     </div>
   );

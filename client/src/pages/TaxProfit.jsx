@@ -7,6 +7,7 @@ import {
 import { taxApi } from '../api/tax.api';
 import useShopStore from '../store/shopStore';
 import { formatINR } from '../utils/format';
+import ExpenseClassifier from '../components/tax/ExpenseClassifier';
 
 /**
  * Tax & Profit — legal tax optimisation and accounting.
@@ -244,49 +245,10 @@ export default function TaxProfit() {
           title="Needs your decision"
           right={`${reviewItems.length} item${reviewItems.length === 1 ? '' : 's'}`}
         />
-        {reviewItems.length === 0 ? (
-          <p className="p-5 text-sm text-gray-500">
-            Nothing awaiting review. Every recorded expense has a confirmed treatment.
-          </p>
-        ) : (
-          <>
-            <p className="px-4 sm:px-5 pt-4 text-xs text-gray-600 leading-relaxed">
-              These are <b>excluded</b> from the estimates above until someone confirms whether
-              they are a deductible business expense and whether their GST is claimable.
-            </p>
-            <ul className="divide-y divide-gray-100 mt-3">
-              {reviewItems.slice(0, 12).map((e) => (
-                <li key={e._id} className="flex items-center gap-3 px-4 sm:px-5 py-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-gray-800 truncate">
-                      {e.description || e.type}
-                    </p>
-                    <p className="text-[11px] text-gray-500">
-                      {new Date(e.date).toLocaleDateString('en-IN')} · {e.type}
-                      {e.vendorName ? ` · ${e.vendorName}` : ''}
-                      {!e.vendorGstin && e.gstAmount > 0 ? ' · no GSTIN on record' : ''}
-                    </p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm font-bold text-gray-900 tabular-nums">{inr(e.amount)}</p>
-                    {e.gstAmount > 0 && (
-                      <p className="text-[11px] text-gray-500 tabular-nums">GST {inr(e.gstAmount)}</p>
-                    )}
-                  </div>
-                  <div className="flex flex-col gap-1 shrink-0">
-                    {e.deductionStatus === 'review' && <Chip label="deduction" />}
-                    {e.itcStatus === 'review' && <Chip label="ITC" />}
-                  </div>
-                </li>
-              ))}
-            </ul>
-            {reviewItems.length > 12 && (
-              <p className="px-5 py-3 text-xs text-gray-500 border-t border-gray-100">
-                +{reviewItems.length - 12} more. Review them in Expenses.
-              </p>
-            )}
-          </>
-        )}
+        <ExpenseClassifier
+          items={reviewItems}
+          financialYear={s.period.financialYear}
+        />
       </section>
 
       {/* ── Compliance signals ─────────────────────────────────────────────── */}

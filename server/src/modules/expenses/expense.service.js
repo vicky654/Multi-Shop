@@ -60,11 +60,74 @@ const createExpense = async (user, data) => {
   return Expense.create({ ...data, ownerId: user.ownerId || user._id, addedBy: user._id });
 };
 
+/**
+ * Fields a client must never set directly. The review stamp is evidence of who
+ * approved a deduction or an input tax credit — if the request body could supply
+ * it, the audit trail would be forgeable and therefore worthless. Set only by
+ * classifyExpense, from the authenticated user.
+ */
+const SERVER_CONTROLLED = ['reviewedBy', 'reviewedAt', 'ownerId', 'addedBy'];
+
 const updateExpense = async (id, user, data) => {
+  const clean = { ...data };
+  for (const k of SERVER_CONTROLLED) delete clean[k];
+
   const filter = user.role === 'super_admin' ? { _id: id } : { _id: id, ownerId: user.ownerId || user._id };
-  const expense = await Expense.findOneAndUpdate(filter, data, { new: true, runValidators: true });
+  const expense = await Expense.findOneAndUpdate(filter, clean, { new: true, runValidators: true });
   if (!expense) throw Object.assign(new Error('Expense not found'), { status: 404 });
   return expense;
+};
+
+/**
+ * Record a human decision on how an expense is treated for tax.
+ *
+ * This is the ONLY path that may change itcStatus/deductionStatus, because each
+ * change alters what the tax estimate deducts or claims. The reviewer and time are
+ * stamped from the session, never from the payload.
+ */
+const classifyExpense = async (id, user, { itcStatus, deductionStatus, reviewNote } = {}) => {
+  const { ITC_STATUS, DEDUCTION_STATUS } = Expense;
+
+  if (itcStatus !== undefined && !ITC_STATUS.includes(itcStatus))
+    throw Object.assign(new Error(`itcStatus must be one of: ${ITC_STATUS.join(', ')}`), { status: 400 });
+  if (deductionStatus !== undefined && !DEDUCTION_STATUS.includes(deductionStatus))
+    throw Object.assign(new Error(`deductionStatus must be one of: ${DEDUCTION_STATUS.join(', ')}`), { status: 400 });
+  if (itcStatus === undefined && deductionStatus === undefined)
+    throw Object.assign(new Error('Provide itcStatus and/or deductionStatus'), { status: 400 });
+
+  const filter = user.role === 'super_admin' ? { _id: id } : { _id: id, ownerId: user.ownerId || user._id };
+  const update = { reviewedBy: user._id, reviewedAt: new Date() };
+  if (itcStatus !== undefined)       update.itcStatus = itcStatus;
+  if (deductionStatus !== undefined) update.deductionStatus = deductionStatus;
+  if (reviewNote !== undefined)      update.reviewNote = String(reviewNote).slice(0, 500);
+
+  const expense = await Expense.findOneAndUpdate(filter, update, { new: true, runValidators: true });
+  if (!expense) throw Object.assign(new Error('Expense not found'), { status: 404 });
+  return expense;
+};
+
+/**
+ * Classify several expenses at once — the realistic case when a shop has a
+ * backlog of unreviewed rows. Applies the same rules and stamps per row.
+ */
+const classifyExpensesBulk = async (user, { ids, itcStatus, deductionStatus, reviewNote } = {}) => {
+  if (!Array.isArray(ids) || ids.length === 0)
+    throw Object.assign(new Error('No expense ids provided'), { status: 400 });
+  if (ids.length > 200)
+    throw Object.assign(new Error('Classify at most 200 expenses at a time'), { status: 400 });
+
+  const results = { updated: 0, failed: [] };
+  for (const id of ids) {
+    try {
+      // Sequential on purpose: each row is validated and stamped individually, so
+      // one bad id cannot silently take the whole batch down.
+      await classifyExpense(id, user, { itcStatus, deductionStatus, reviewNote });
+      results.updated += 1;
+    } catch (e) {
+      results.failed.push({ id, error: e.message });
+    }
+  }
+  return results;
 };
 
 const deleteExpense = async (id, user) => {
@@ -74,4 +137,7 @@ const deleteExpense = async (id, user) => {
   return expense;
 };
 
-module.exports = { getExpenses, getTotalExpenses, createExpense, updateExpense, deleteExpense };
+module.exports = {
+  getExpenses, getTotalExpenses, createExpense, updateExpense, deleteExpense,
+  classifyExpense, classifyExpensesBulk,
+};
