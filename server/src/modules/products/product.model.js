@@ -127,7 +127,14 @@ productSchema.index({ subCategory: 1, shopId: 1 });
 productSchema.index({ isFeatured: 1, shopId: 1 });
 productSchema.index({ isTrending: 1, shopId: 1 });
 productSchema.index({ isNewArrival: 1, shopId: 1 });
-productSchema.index({ name: 'text', category: 'text', description: 'text', sku: 'text', barcode: 'text', brand: 'text' });
+// Deliberately NOT extended with `brand`. MongoDB allows only ONE text index per
+// collection and refuses to redefine an existing one's fields, so adding a field
+// here throws IndexOptionsConflict on boot against every database that already
+// has this index — which is every existing deployment. Admin search does not use
+// this index anyway: buildFilter() matches brand with a regex $or (a $text index
+// only matches whole words, so it could never find "pep" in "Pepsi"). This index
+// serves the public storefront's $text search only.
+productSchema.index({ name: 'text', category: 'text', description: 'text', sku: 'text', barcode: 'text' });
 productSchema.index({ shopId: 1, brand: 1 });
 // Low-stock queries: { isActive:1, stock:1, shopId:1 } — used by alerts & insights
 productSchema.index({ shopId: 1, isActive: 1, stock: 1 });

@@ -26,6 +26,7 @@ const buildFilter = (user, shopId, query) => {
         { sku: rx },
         { barcode: rx },
         { category: rx },
+        { brand: rx },
       ];
     }
   }
