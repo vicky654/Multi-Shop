@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const dns      = require('node:dns');
 
 /**
  * Resolve which database to connect to.
@@ -64,9 +65,69 @@ const resolveUri = () => {
   return { uri, isTest: mode === 'test', isDemo: mode === 'demo', mode, label };
 };
 
+// ── DNS fallback for mongodb+srv:// ───────────────────────────────────────────
+//
+// WHY THIS EXISTS
+//   A `mongodb+srv://` URI is not a hostname — the driver must first resolve a
+//   DNS SRV record (_mongodb._tcp.<host>) plus a TXT record. Plenty of ISP and
+//   router resolvers REFUSE SRV queries outright, and Node's resolver treats the
+//   first REFUSED as fatal rather than trying the next configured server. The
+//   result is a startup crash reading
+//       ❌ DB connection failed: querySrv EREFUSED _mongodb._tcp.<cluster>
+//   which looks intermittent (it depends on resolver order and cache state) but
+//   is really a hard "this resolver won't answer SRV" every time.
+//
+//   Measured on the affected machine: system resolvers 0/3, public DNS 3/3.
+//
+//   So: try the system resolvers FIRST — corporate/split-horizon DNS and local
+//   Mongo instances must keep working — and only on a DNS-shaped failure retry
+//   through a public resolver. Override the fallback list with DNS_SERVERS, or
+//   set DNS_SERVERS= (empty) to disable the fallback entirely.
+const DNS_ERROR_CODES = new Set([
+  'EREFUSED', 'ESERVFAIL', 'ETIMEOUT', 'ENOTFOUND', 'EAI_AGAIN', 'ENODATA', 'ECONNREFUSED',
+]);
+
+// Exported for tests: misclassifying here would either mask a real connection
+// failure behind a pointless retry, or skip the retry that actually fixes things.
+const looksLikeDnsFailure = (err) =>
+  DNS_ERROR_CODES.has(err?.code)
+  || /querySrv|queryTxt|EREFUSED|ESERVFAIL|ENOTFOUND|EAI_AGAIN/i.test(err?.message || '');
+
+const fallbackDnsServers = () =>
+  (process.env.DNS_SERVERS ?? '8.8.8.8,1.1.1.1')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
 const connectDB = async () => {
   const { uri, mode, label } = resolveUri();
-  await mongoose.connect(uri);
+  const options = {
+    // Without this the driver waits 30s by default anyway, but being explicit
+    // means a bad resolver surfaces predictably instead of appearing to hang.
+    serverSelectionTimeoutMS: Number(process.env.DB_TIMEOUT_MS) || 30000,
+  };
+
+  try {
+    await mongoose.connect(uri, options);
+  } catch (err) {
+    const fallback = fallbackDnsServers();
+    const retryable = uri.startsWith('mongodb+srv://')
+      && looksLikeDnsFailure(err)
+      && fallback.length > 0;
+
+    if (!retryable) throw err;
+
+    console.warn(
+      `⚠️  DNS lookup failed (${err.code || 'SRV'}) via system resolvers `
+      + `[${dns.getServers().join(', ')}]`
+    );
+    console.warn(`   Retrying through [${fallback.join(', ')}] — override with DNS_SERVERS.`);
+
+    dns.setServers(fallback);
+    await mongoose.connect(uri, options);
+    console.log('✅ Connected after switching DNS resolvers.');
+  }
+
   console.log(
     `📦 MongoDB connected: ${mongoose.connection.host} / ${mongoose.connection.name}` +
     (label ? `  ⚠️  ${label}` : '')
@@ -76,3 +137,5 @@ const connectDB = async () => {
 
 module.exports = connectDB;
 module.exports.resolveUri = resolveUri;
+module.exports.looksLikeDnsFailure = looksLikeDnsFailure;
+module.exports.fallbackDnsServers = fallbackDnsServers;
