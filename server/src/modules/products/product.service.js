@@ -311,7 +311,7 @@ const exportAllProducts = async (user, shopId) => {
 // ── Stock Adjustment (damage / theft / restock / audit correction) ────────────
 const ADJUSTMENT_REASONS = ['restock', 'damage', 'theft', 'correction', 'audit', 'return'];
 
-const adjustStock = async (id, user, { delta, reason, notes }) => {
+const adjustStock = async (id, user, { delta, reason, notes, size, color }) => {
   const qty = parseInt(delta, 10);
   if (isNaN(qty) || qty === 0)
     throw Object.assign(new Error('delta must be a non-zero integer'), { status: 400 });
@@ -323,6 +323,52 @@ const adjustStock = async (id, user, { delta, reason, notes }) => {
     throw Object.assign(new Error('Product not found'), { status: 404 });
   if (user.role !== 'super_admin' && !user.shops.some((s) => s.toString() === product.shopId.toString()))
     throw Object.assign(new Error('Access denied'), { status: 403 });
+
+  // ── Variant products: the cell and root must move together ──────────────────
+  // Root stock on a variant product is the sum of its cells. Moving root alone
+  // would desync it from variantStock[], and from then on sale.service.js
+  // decrements a total that no longer matches the breakdown. So the caller must
+  // name a variant, and then both move in lockstep — exactly as a sale does.
+  if (product.trackVariantStock) {
+    const vSize  = (size  || '').trim();
+    const vColor = (color || '').trim();
+
+    if (!vSize && !vColor) {
+      const available = (product.variantStock || [])
+        .map((v) => [v.color, v.size].filter(Boolean).join('/'))
+        .join(', ');
+      throw Object.assign(
+        new Error(
+          `"${product.name}" tracks stock per variant — specify size/color to adjust. `
+          + `Available: ${available || 'none'}`
+        ),
+        { status: 400 }
+      );
+    }
+
+    const cell = (product.variantStock || []).find((v) => v.size === vSize && v.color === vColor);
+    if (!cell)
+      throw Object.assign(
+        new Error(`Variant (${vSize}/${vColor}) not found for "${product.name}"`),
+        { status: 400 }
+      );
+
+    if (cell.stock + qty < 0)
+      throw Object.assign(
+        new Error(`Cannot reduce ${[vColor, vSize].filter(Boolean).join('/')} below 0 `
+          + `(current: ${cell.stock}, delta: ${qty})`),
+        { status: 400 }
+      );
+
+    const previousStock = product.stock;
+    cell.stock    += qty;
+    product.stock += qty;              // lockstep — never one without the other
+    await product.save();
+    return {
+      product, previousStock, newStock: product.stock, delta: qty, reason,
+      variant: { size: vSize, color: vColor, newStock: cell.stock },
+    };
+  }
 
   const newStock = product.stock + qty;
   if (newStock < 0)
@@ -354,10 +400,23 @@ const bulkAuditAdjust = async (user, shopId, items) => {
 
   const ops = [];
   const results = [];
+  const skipped = [];
 
   for (const item of items) {
     const product = prodMap[item.productId?.toString()];
     if (!product) continue;
+
+    // A single physical count cannot be split back across a size/colour matrix,
+    // and writing it to root alone would desync root from variantStock[]. Report
+    // it as skipped rather than guessing a distribution the counter never saw.
+    if (product.trackVariantStock) {
+      skipped.push({
+        productId: product._id,
+        name:      product.name,
+        reason:    'Tracks stock per variant — audit each size/color from the product editor',
+      });
+      continue;
+    }
 
     const physicalCount = parseInt(item.physicalCount, 10);
     if (isNaN(physicalCount) || physicalCount < 0) continue;
@@ -385,7 +444,7 @@ const bulkAuditAdjust = async (user, shopId, items) => {
     await Product.bulkWrite(ops, { ordered: false });
   }
 
-  return { adjusted: results.length, items: results };
+  return { adjusted: results.length, items: results, skipped };
 };
 
 // ── Bulk Delete ───────────────────────────────────────────────────────────────

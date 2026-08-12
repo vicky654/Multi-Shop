@@ -152,10 +152,12 @@ const bulkDelete = asyncHandler(async (req, res) => {
 
 // ── Stock Adjustment ──────────────────────────────────────────────────────────
 const adjustStock = asyncHandler(async (req, res) => {
-  const { delta, reason, notes } = req.body;
+  const { delta, reason, notes, size, color } = req.body;
+  const variantLabel = [color, size].filter(Boolean).join('/');
   logAction(req, LOG_ACTIONS.PRODUCT_UPDATE, 'products',
-    `Stock adjusted: ID ${req.params.id}, delta ${delta}, reason ${reason}`);
-  const result = await productService.adjustStock(req.params.id, req.user, { delta, reason, notes });
+    `Stock adjusted: ID ${req.params.id}, delta ${delta}, reason ${reason}`
+    + (variantLabel ? `, variant ${variantLabel}` : ''));
+  const result = await productService.adjustStock(req.params.id, req.user, { delta, reason, notes, size, color });
   success(res, result, 'Stock adjusted');
 });
 

@@ -213,10 +213,23 @@ const getCreditSummary = async (user, shopId) => {
 // ── 6. Bulk Restock ───────────────────────────────────────────────────────────
 // items: [{productId, addQty}]
 const bulkRestockProducts = async (shopId, items) => {
-  if (!Array.isArray(items) || items.length === 0) return { updated: 0 };
+  if (!Array.isArray(items) || items.length === 0) return { updated: 0, skipped: 0 };
 
-  const ops = items
-    .filter((i) => i.productId && Number(i.addQty) > 0)
+  const wanted = items.filter((i) => i.productId && Number(i.addQty) > 0);
+
+  // Variant products hold their stock in variantStock[]; a root-only $inc would
+  // desync root from the matrix, and from then on every sale of that product
+  // decrements a total that no longer matches its breakdown. Restocking those
+  // needs a specific size/colour, so they are reported rather than guessed at.
+  const variantIds = new Set(
+    (await Product.find({ _id: { $in: wanted.map((i) => i.productId) }, trackVariantStock: true })
+      .select('_id')
+      .lean()
+    ).map((p) => p._id.toString())
+  );
+
+  const ops = wanted
+    .filter((i) => !variantIds.has(i.productId.toString()))
     .map((i) =>
       Product.findOneAndUpdate(
         { _id: i.productId, shopId },
@@ -226,7 +239,7 @@ const bulkRestockProducts = async (shopId, items) => {
     );
 
   const results = await Promise.all(ops);
-  return { updated: results.filter(Boolean).length };
+  return { updated: results.filter(Boolean).length, skipped: variantIds.size };
 };
 
 module.exports = {

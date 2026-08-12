@@ -39,9 +39,11 @@ export const productsApi = {
   // Bulk delete — ids: string[]
   bulkDelete: (ids) => api.delete('/products/bulk', { data: { ids } }),
 
-  // Stock adjustment — delta can be negative (damage/theft) or positive (restock)
-  adjustStock: (id, { delta, reason, notes }) =>
-    api.patch(`/products/${id}/adjust-stock`, { delta, reason, notes }),
+  // Stock adjustment — delta can be negative (damage/theft) or positive (restock).
+  // size/color are REQUIRED for variant-tracked products: root stock is the sum
+  // of the matrix cells, so the server refuses a root-only adjustment (400).
+  adjustStock: (id, { delta, reason, notes, size, color }) =>
+    api.patch(`/products/${id}/adjust-stock`, { delta, reason, notes, size, color }),
 
   // Bulk audit — items: [{ productId, physicalCount }]
   bulkAuditAdjust: (shopId, items) =>
