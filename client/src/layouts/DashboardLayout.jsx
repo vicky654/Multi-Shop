@@ -24,6 +24,7 @@ import { migrateLegacyHeldBills } from '../hooks/useHeldBills';
 import useShopStore  from '../store/shopStore';
 import useAuthStore  from '../store/authStore';
 import useSetupStore from '../store/setupStore';
+import useThemeStore from '../store/themeStore';
 import { demoApi }   from '../api/demo.api';
 import { shopsApi }    from '../api/shops.api';
 import { productsApi } from '../api/products.api';
@@ -58,6 +59,12 @@ export default function DashboardLayout() {
   useEffect(() => { migrateLegacyHeldBills(); }, []);
 
   const location = useLocation();
+
+  // Where the nav sits. Only affects lg: and up — on smaller screens the sidebar
+  // stays an overlay drawer paired with BottomNav, unchanged.
+  const sidebarPosition = useThemeStore((s) => s.sidebarPosition);
+  const isHorizontal    = sidebarPosition === 'top' || sidebarPosition === 'bottom';
+  const isRight         = sidebarPosition === 'right';
 
   const { setShops, activeShop } = useShopStore();
   const user                     = useAuthStore((s) => s.user);
@@ -138,7 +145,17 @@ export default function DashboardLayout() {
   }, [user, activeShop]);
 
   return (
-    <div className="h-full flex overflow-hidden bg-[var(--color-bg)]">
+    <div className={[
+      'h-full flex overflow-hidden bg-[var(--color-bg)]',
+      // Horizontal: the bar is a row in a column layout, so `flex-col` — and
+      // `lg:flex-col-reverse` drops it below the content for 'bottom'.
+      // Vertical: the default row, reversed for 'right'.
+      // The mobile drawer is `fixed`, so it never participates in this flex and
+      // the small-screen layout is identical in all four modes.
+      isHorizontal
+        ? `flex-col ${sidebarPosition === 'bottom' ? 'lg:flex-col-reverse' : ''}`
+        : (isRight ? 'lg:flex-row-reverse' : ''),
+    ].join(' ')}>
       <Sidebar
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}

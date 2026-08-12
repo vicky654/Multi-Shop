@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Edit2, Trash2, Store, Users, Link2, ExternalLink, Bell, MessageCircle, Send, Sun, Moon, Monitor, LayoutGrid, Tag, Clock, QrCode } from 'lucide-react';
+import { Plus, Edit2, Trash2, Store, Users, Link2, ExternalLink, Bell, MessageCircle, Send, Sun, Moon, Monitor, LayoutGrid, Tag, Clock, QrCode,
+  PanelLeft, PanelRight, PanelTop, PanelBottom } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { shopsApi } from '../api/shops.api';
 import { authApi } from '../api/auth.api';
@@ -151,7 +152,8 @@ export default function Settings() {
   };
 
   const staff = staffData?.data?.staff || [];
-  const { theme, setTheme, compact, setCompact, primaryColor, setPrimaryColor, reset: resetTheme } = useThemeStore();
+  const { theme, setTheme, compact, setCompact, primaryColor, setPrimaryColor,
+          sidebarPosition, setSidebarPosition, reset: resetTheme } = useThemeStore();
 
   return (
     <div className="space-y-8">
@@ -179,6 +181,40 @@ export default function Settings() {
                 className={[
                   'flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all',
                   theme === value
+                    ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm'
+                    : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50',
+                ].join(' ')}
+              >
+                <Icon className="w-4 h-4" />
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Sidebar position */}
+        <div className="mb-5 border-t border-gray-100 pt-5">
+          <div className="mb-3">
+            <p className="text-sm font-medium text-gray-700">Navigation Position</p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Where the main menu sits on desktop. Phones and tablets keep the slide-in
+              menu and bottom bar whichever you pick.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { value: 'left',   label: 'Left',   Icon: PanelLeft },
+              { value: 'right',  label: 'Right',  Icon: PanelRight },
+              { value: 'top',    label: 'Top',    Icon: PanelTop },
+              { value: 'bottom', label: 'Bottom', Icon: PanelBottom },
+            ].map(({ value, label, Icon }) => (
+              <button
+                key={value}
+                onClick={() => setSidebarPosition(value)}
+                aria-pressed={sidebarPosition === value}
+                className={[
+                  'flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all',
+                  sidebarPosition === value
                     ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm'
                     : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50',
                 ].join(' ')}

@@ -11,6 +11,7 @@ import { usePermissions } from '../hooks/usePermissions';
 import useShopStore  from '../store/shopStore';
 import useAuthStore  from '../store/authStore';
 import useSetupStore from '../store/setupStore';
+import useThemeStore from '../store/themeStore';
 import ShopSwitcher from './ShopSwitcher';
 import AppFlowGuide from './AppFlowGuide';
 
@@ -117,8 +118,108 @@ function SetupProgress({ steps, completed, onOpenSetup, onClose }) {
   );
 }
 
+
+// ── HorizontalNav ──────────────────────────────────────────────────────────────
+/**
+ * The top/bottom navigation bar, desktop only.
+ *
+ * A horizontal bar cannot carry everything the vertical rail does — the setup
+ * stepper and shop switcher are tall, column-shaped things. Rather than drop
+ * those features, they collapse to icon buttons here so nothing becomes
+ * unreachable: Setup opens the same guide modal, and the shop switcher stays as
+ * a compact control on the right.
+ */
+function HorizontalNav({
+  role, can, showSetup, nextRoute, onOpenSetup, onToggleGuide, shopSlug, shopId,
+}) {
+  const items = NAV.filter(({ perm, superAdminOnly }) =>
+    superAdminOnly ? role === 'super_admin' : can(perm));
+
+  return (
+    <nav className="hidden lg:flex shrink-0 items-center gap-2 bg-gray-900 text-white
+                    border-b border-gray-700/60 px-4 h-14">
+      {/* Brand */}
+      <div className="flex items-center gap-2 shrink-0 pr-2">
+        <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-inner">
+          <Store className="w-4 h-4" />
+        </div>
+        <span className="font-bold tracking-tight">MultiShop</span>
+      </div>
+
+      {/* Links — scroll horizontally rather than wrap, so the bar keeps its height */}
+      <div className="flex-1 flex items-center gap-1 overflow-x-auto no-scrollbar">
+        {items.map(({ to, icon: Icon, label, tour }) => {
+          const isNext = showSetup && to === nextRoute;
+          return (
+            <NavLink
+              key={to}
+              to={to}
+              title={label}
+              {...(tour ? { 'data-tour': tour } : {})}
+              className={({ isActive }) => [
+                'shrink-0 flex items-center gap-2 px-3 h-9 rounded-lg text-sm font-medium transition-all',
+                isActive
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-800',
+              ].join(' ')}
+            >
+              <Icon className="w-4 h-4 shrink-0" />
+              <span className="whitespace-nowrap">{label}</span>
+              {isNext && (
+                <span className="text-[9px] font-bold bg-blue-500 text-white px-1.5 py-0.5 rounded-full animate-pulse">
+                  NEXT
+                </span>
+              )}
+            </NavLink>
+          );
+        })}
+      </div>
+
+      {/* Right cluster — the rail's extras, compacted to icons */}
+      <div className="flex items-center gap-1 shrink-0 pl-2 border-l border-gray-700/60">
+        {showSetup && (
+          <button
+            onClick={onOpenSetup}
+            title="Open setup guide"
+            className="w-9 h-9 rounded-lg flex items-center justify-center text-blue-400 hover:text-white hover:bg-blue-600 transition"
+          >
+            <Sparkles className="w-4 h-4" />
+          </button>
+        )}
+        <button
+          onClick={onToggleGuide}
+          title="How it works"
+          className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-white hover:bg-gray-800 transition"
+        >
+          <BookOpen className="w-4 h-4" />
+        </button>
+        {shopId && (
+          <a
+            href={shopSlug ? `/shop/${shopSlug}` : `/shop?shopId=${shopId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Customer Shop"
+            className="w-9 h-9 rounded-lg flex items-center justify-center text-emerald-400 hover:text-emerald-300 hover:bg-emerald-900/30 transition"
+          >
+            <Store className="w-4 h-4" />
+          </a>
+        )}
+        <div className="w-48 pl-1">
+          <ShopSwitcher />
+        </div>
+      </div>
+    </nav>
+  );
+}
+
 // ── Sidebar ────────────────────────────────────────────────────────────────────
 export default function Sidebar({ open, onClose, onOpenSetup }) {
+  // Position is an appearance preference like theme/accent, so it lives in the
+  // same store. Only honoured from lg: upward — see SIDEBAR_POSITIONS.
+  const sidebarPosition = useThemeStore((s) => s.sidebarPosition);
+  const isHorizontal = sidebarPosition === 'top' || sidebarPosition === 'bottom';
+  const isRight      = sidebarPosition === 'right';
+
   const [showGuide, setShowGuide] = useState(false);
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem('sidebar_collapsed') === 'true'
@@ -151,10 +252,16 @@ export default function Sidebar({ open, onClose, onOpenSetup }) {
   return (
     <>
       <aside className={[
-        'fixed inset-y-0 left-0 z-30 bg-gray-900 text-white flex flex-col',
+        'fixed inset-y-0 z-30 bg-gray-900 text-white flex flex-col',
         'transform transition-all duration-300',
-        open ? 'translate-x-0' : '-translate-x-full',
+        // The drawer slides in from whichever edge it is anchored to.
+        isRight ? 'right-0' : 'left-0',
+        open ? 'translate-x-0' : (isRight ? 'translate-x-full' : '-translate-x-full'),
         'lg:relative lg:translate-x-0 lg:h-full lg:shrink-0',
+        // Top/bottom get a horizontal bar at lg+, but keep this vertical drawer
+        // on small screens: re-anchoring the drawer would break navigation on
+        // phones to serve a preference that only applies to large screens.
+        isHorizontal ? 'lg:hidden' : '',
         collapsed ? 'w-16' : 'w-64',
       ].join(' ')}>
 
@@ -280,6 +387,21 @@ export default function Sidebar({ open, onClose, onOpenSetup }) {
           </div>
         )}
       </aside>
+
+      {/* Horizontal bar for top/bottom, desktop only. The drawer above still
+          serves small screens, so the two are never visible at once. */}
+      {isHorizontal && (
+        <HorizontalNav
+          role={role}
+          can={can}
+          showSetup={showSetup}
+          nextRoute={nextRoute}
+          onOpenSetup={onOpenSetup}
+          onToggleGuide={() => setShowGuide((v) => !v)}
+          shopSlug={activeShop?.slug}
+          shopId={shopId}
+        />
+      )}
 
       {/* App Flow Guide — slides in from left, above the sidebar overlay */}
       {showGuide && (
