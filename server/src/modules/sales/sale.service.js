@@ -54,11 +54,13 @@ const enrichItems = async (items, { preservePrice = false, skipStockCheck = fals
       }
     }
 
+    // Resolved once — both the stock check and the pricing below need it.
+    const variant = product.trackVariantStock && (size || color)
+      ? (product.variantStock || []).find((v) => v.size === size && v.color === color)
+      : null;
+
     // ── Variant-level stock check ──────────────────────────────────────────────
     if (product.trackVariantStock && (size || color)) {
-      const variant = (product.variantStock || []).find(
-        (v) => v.size === size && v.color === color
-      );
       if (!variant)
         throw Object.assign(new Error(`Variant (${size}/${color}) not found for "${product.name}"`), { status: 400 });
       if (!skipStockCheck && variant.stock < qty)
@@ -68,21 +70,29 @@ const enrichItems = async (items, { preservePrice = false, skipStockCheck = fals
         throw Object.assign(new Error(`Insufficient stock for "${product.name}"`), { status: 400 });
     }
 
+    // ── Per-variant pricing ────────────────────────────────────────────────────
+    // A variant may carry its own cost/price/discount — e.g. size 11 costs more
+    // to make than size 7. `??` not `||`: an unset field is null (see
+    // product.model.js), and a deliberate 0 discount on the variant must NOT
+    // fall through to the product's discount.
+    const unitCost        = variant?.costPrice ?? product.costPrice;
+    const listPrice       = variant?.price     ?? product.price;
+    const productDiscount = variant?.discount  ?? product.discount ?? 0;
+
     const discount        = item.discount || 0;
-    const productDiscount = product.discount || 0;
     const effectiveDisc   = Math.max(discount, productDiscount);
     // Offline sales preserve the price shown to the customer at the time of sale.
     // Online sales always use the current DB price.
-    const basePrice       = preservePrice && item.price > 0 ? item.price : product.price;
+    const basePrice       = preservePrice && item.price > 0 ? item.price : listPrice;
     const discountedPrice = basePrice * (1 - effectiveDisc / 100);
     const subtotal        = +(discountedPrice * qty).toFixed(2);
-    const profit          = +((discountedPrice - product.costPrice) * qty).toFixed(2);
+    const profit          = +((discountedPrice - unitCost) * qty).toFixed(2);
 
     enrichedItems.push({
       product:       product._id,
       name:          product.name,
-      price:         product.price,
-      costPrice:     product.costPrice,
+      price:         listPrice,
+      costPrice:     unitCost,
       quantity:      qty,
       discount:      effectiveDisc,
       subtotal,
@@ -94,10 +104,13 @@ const enrichItems = async (items, { preservePrice = false, skipStockCheck = fals
       unit:          product.unit    || 'pcs',
       // Carry variant tracking flag for deductStock
       _trackVariant: product.trackVariantStock && !!(size || color),
+      // Transient: consumed by computeInvoice below, then dropped by the strict
+      // saleItem schema — the same mechanism as _trackVariant above.
+      gstRate:       product.gstRate ?? null,
     });
 
     totalAmount   += subtotal;
-    totalDiscount += +((product.price - discountedPrice) * qty).toFixed(2);
+    totalDiscount += +((listPrice - discountedPrice) * qty).toFixed(2);
     totalProfit   += profit;
   }
 
@@ -360,7 +373,10 @@ const createSale = async (user, data) => {
       price:       i.quantity ? i.subtotal / i.quantity : 0,
       quantity:    i.quantity,
       discountPct: 0,
-      taxRate,
+      // A product-level GST rate wins over the invoice rate; null means "not
+      // configured" and falls back. `== null` catches undefined too — `||` would
+      // let a legitimately 0% (zero-rated) product be taxed at the invoice rate.
+      taxRate:     i.gstRate == null ? taxRate : i.gstRate,
       name:        i.name,
       hsnCode:     i.hsnCode,
     })),
@@ -1029,7 +1045,8 @@ const updateSale = async (id, user, data) => {
       price:       i.quantity ? i.subtotal / i.quantity : 0,
       quantity:    i.quantity,
       discountPct: 0,
-      taxRate:     newTaxRate,
+      // Same product-level GST precedence as createSale — see the note there.
+      taxRate:     i.gstRate == null ? newTaxRate : i.gstRate,
       name:        i.name,
       hsnCode:     i.hsnCode,
     })),
