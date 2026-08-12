@@ -15,16 +15,16 @@ const SHORTCUTS = [
 
 export default function BillingFooter({ isOnline }) {
   return (
-    <footer className="shrink-0 bg-[#0F172A] text-slate-300 border-t border-slate-800 px-5 py-2.5 flex items-center justify-between text-xs select-none z-20">
+    <footer className="shrink-0 bg-white text-gray-600 border-t border-gray-200 px-5 py-2.5 flex items-center justify-between text-xs select-none z-20">
       {/* Keyboard Shortcuts Cheat Sheet */}
       <div className="flex items-center gap-x-4 gap-y-1 flex-wrap">
-        <span className="text-[10px] font-extrabold uppercase text-slate-500 tracking-wider">Shortcuts:</span>
+        <span className="text-[10px] font-extrabold uppercase text-gray-500 tracking-wider">Shortcuts:</span>
         {SHORTCUTS.map((s) => (
           <div key={s.key} className="flex items-center gap-1.5">
-            <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded font-mono text-[10px] font-bold text-white shadow-sm">
+            <kbd className="px-1.5 py-0.5 bg-gray-100 border border-gray-200 rounded font-mono text-[10px] font-bold text-white shadow-sm">
               {s.key}
             </kbd>
-            <span className="text-slate-400 font-medium">{s.desc}</span>
+            <span className="text-gray-400 font-medium">{s.desc}</span>
           </div>
         ))}
       </div>

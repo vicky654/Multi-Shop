@@ -293,13 +293,13 @@ export default function Billing() {
 
   return (
     <>
-      <div className="flex h-[calc(100vh-4.5rem)] -mx-4 -mt-4 sm:-mx-6 lg:-mx-8 overflow-hidden bg-[#f8fafc] flex-col">
+      <div className="flex h-[calc(100vh-4.5rem)] -mx-4 -mt-4 sm:-mx-6 lg:-mx-8 overflow-hidden bg-[var(--color-bg)] flex-col">
         {/* Top Navbar */}
         <div className="shrink-0 flex items-center justify-between px-5 py-2.5 bg-white border-b border-gray-200">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-extrabold text-slate-800 uppercase tracking-wide">POS Billing System</span>
+            <span className="text-sm font-extrabold text-gray-800 uppercase tracking-wide">POS Billing System</span>
             <span className="text-gray-300 select-none">|</span>
-            <span className="text-xs font-semibold text-slate-400 bg-slate-50 border border-slate-100 px-2 py-0.5 rounded-lg">{activeShop?.name}</span>
+            <span className="text-xs font-semibold text-gray-400 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-lg">{activeShop?.name}</span>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -309,8 +309,8 @@ export default function Billing() {
               <Calendar className="w-3.5 h-3.5" /> Close Day
             </button>
             {currentUser && (
-              <div className="flex items-center gap-1.5 text-xs text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100 font-bold">
-                <User className="w-3.5 h-3.5 text-slate-400" /> {currentUser.name}
+              <div className="flex items-center gap-1.5 text-xs text-gray-500 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-100 font-bold">
+                <User className="w-3.5 h-3.5 text-gray-400" /> {currentUser.name}
               </div>
             )}
           </div>

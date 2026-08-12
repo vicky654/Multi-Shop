@@ -29,6 +29,14 @@
   --color-input:         #FFFFFF;
   --color-overlay:       rgba(0, 0, 0, 0.45);
 
+  /* Raised interactive surface: chips, segmented controls, secondary buttons.
+     Deliberately NOT --color-card-hover, which is a card's own hover state and
+     therefore too close to the card to read as a distinct control sitting on it.
+     Added because Orders.jsx hand-rolled this pair as hex (#334155/#475569),
+     which pinned the page to dark whatever the active theme. */
+  --color-surface-2:       #F1F5F9;
+  --color-surface-2-hover: #E2E8F0;
+
   /* Borders */
   --color-border:        #E5E7EB;
   --color-border-light:  #F3F4F6;
@@ -71,6 +79,11 @@ html.dark {
   --color-card-hover:    #263344;
   --color-input:         #1E293B;
   --color-overlay:       rgba(0, 0, 0, 0.65);
+
+  /* These two are the exact values Orders.jsx previously hardcoded, so the dark
+     appearance of that page is preserved byte-for-byte after tokenising. */
+  --color-surface-2:       #334155;
+  --color-surface-2-hover: #475569;
 
   --color-border:        #334155;
   --color-border-light:  #1E293B;
@@ -136,6 +149,31 @@ html.dark {
 
   html.dark .divide-gray-100 > * + *  { border-color: var(--color-border-light) !important; }
   html.dark .divide-gray-200 > * + *  { border-color: var(--color-border)       !important; }
+
+  /* ── Gaps in the mapping above ────────────────────────────────────
+     Utilities that were in use but had no dark equivalent, so they stayed
+     light-on-light (or dark-on-dark) when the theme flipped. Extending this
+     layer keeps the convention — write gray-* and let dark remap — rather than
+     scattering var() references through components. */
+  html.dark .bg-gray-200       { background-color: var(--color-surface-2)       !important; }
+  html.dark .bg-gray-300       { background-color: var(--color-surface-2-hover) !important; }
+  html.dark .text-gray-300     { color: var(--color-text-disabled) !important; }
+  html.dark .border-gray-50    { border-color: var(--color-border-light) !important; }
+  html.dark .ring-gray-200     { --tw-ring-color: var(--color-border) !important; }
+  html.dark .divide-gray-50 > * + * { border-color: var(--color-border-light) !important; }
+
+  /* Hover states: a light hover tint reads as a *lift* on a light surface but as
+     a flash on a dark one, so they map to the raised-surface tokens instead. */
+  html.dark .hover\:bg-gray-50:hover  { background-color: var(--color-card-hover)      !important; }
+  html.dark .hover\:bg-gray-100:hover { background-color: var(--color-surface-2)       !important; }
+  html.dark .hover\:bg-gray-200:hover { background-color: var(--color-surface-2-hover) !important; }
+
+  /* `slate` is used in a handful of places and was never mapped at all. */
+  html.dark .bg-slate-50       { background-color: var(--color-bg)      !important; }
+  html.dark .border-slate-100  { border-color: var(--color-border-light) !important; }
+  html.dark .text-slate-400    { color: var(--color-text-muted)     !important; }
+  html.dark .text-slate-500    { color: var(--color-text-muted)     !important; }
+  html.dark .text-slate-800    { color: var(--color-text)           !important; }
 }
 
 /* ═══════════════════════════════════════════════════════════════

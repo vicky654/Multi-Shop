@@ -138,7 +138,7 @@ export default function DashboardLayout() {
   }, [user, activeShop]);
 
   return (
-    <div className="h-full flex overflow-hidden bg-gray-50">
+    <div className="h-full flex overflow-hidden bg-[var(--color-bg)]">
       <Sidebar
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}

@@ -16,15 +16,22 @@ import ShareModal from '../components/ShareModal';
 import { useSwipe } from '../hooks/useSwipe';
 import { formatDiscountPct } from '../utils/format';
 
-// ── Design tokens (dark surface, used throughout this page) ───────────────────
-// bg:   #0F172A  card: #1E293B  border: #334155  text: #E2E8F0  muted: #94A3B8
+// ── Theming ───────────────────────────────────────────────────────────────────
+// This page used to hardcode a dark palette (#0F172A / #1E293B / #334155 / …),
+// which pinned it to dark regardless of the user's light/dark/system setting.
+// It now uses the app's design tokens throughout, so it follows the active theme.
+// The dark values live in html.dark in index.css, so the dark appearance is
+// unchanged — it is just no longer forced.
+//
+// Accent colours carry `dark:` variants: the -400 weights were picked for a dark
+// surface and are too washed out on a white card, so light mode uses -600.
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const METHOD_META = {
-  cash:   { label: 'Cash',   Icon: Banknote,    cls: 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20' },
-  card:   { label: 'Card',   Icon: CreditCard,  cls: 'text-blue-400   bg-blue-400/10   border-blue-400/20'   },
-  upi:    { label: 'UPI',    Icon: Smartphone,  cls: 'text-violet-400 bg-violet-400/10 border-violet-400/20' },
-  credit: { label: 'Credit', Icon: ReceiptText, cls: 'text-amber-400  bg-amber-400/10  border-amber-400/20'  },
+  cash:   { label: 'Cash',   Icon: Banknote,    cls: 'text-emerald-600 dark:text-emerald-400 bg-emerald-400/10 border-emerald-400/20' },
+  card:   { label: 'Card',   Icon: CreditCard,  cls: 'text-blue-600 dark:text-blue-400   bg-blue-400/10   border-blue-400/20'   },
+  upi:    { label: 'UPI',    Icon: Smartphone,  cls: 'text-violet-600 dark:text-violet-400 bg-violet-400/10 border-violet-400/20' },
+  credit: { label: 'Credit', Icon: ReceiptText, cls: 'text-amber-600 dark:text-amber-400  bg-amber-400/10  border-amber-400/20'  },
 };
 
 const PERIODS = [
@@ -92,7 +99,7 @@ function RefreshIndicator({ visible }) {
           <motion.div
             animate={{ rotate: 360 }}
             transition={{ repeat: Infinity, duration: 0.8, ease: 'linear' }}
-            className="w-5 h-5 border-2 border-[#334155] border-t-blue-500 rounded-full"
+            className="w-5 h-5 border-2 border-[var(--color-border)] border-t-blue-500 rounded-full"
           />
         </motion.div>
       )}
@@ -103,14 +110,14 @@ function RefreshIndicator({ visible }) {
 // ── Skeleton card ──────────────────────────────────────────────────────────────
 function SkeletonCard() {
   return (
-    <div className="bg-[#1E293B] border border-[#334155] rounded-2xl p-4 animate-pulse">
+    <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl p-4 animate-pulse">
       <div className="flex gap-3">
-        <div className="w-10 h-10 rounded-xl bg-[#334155] shrink-0" />
+        <div className="w-10 h-10 rounded-xl bg-[var(--color-surface-2)] shrink-0" />
         <div className="flex-1 space-y-2">
-          <div className="h-3 bg-[#334155] rounded w-2/3" />
-          <div className="h-2.5 bg-[#334155] rounded w-1/2" />
+          <div className="h-3 bg-[var(--color-surface-2)] rounded w-2/3" />
+          <div className="h-2.5 bg-[var(--color-surface-2)] rounded w-1/2" />
         </div>
-        <div className="w-16 h-4 bg-[#334155] rounded" />
+        <div className="w-16 h-4 bg-[var(--color-surface-2)] rounded" />
       </div>
     </div>
   );
@@ -159,38 +166,38 @@ function OrderCard({ sale, onInvoice, onShare }) {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-      className="bg-[#1E293B] border border-[#334155] rounded-2xl overflow-hidden shadow-sm"
+      className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl overflow-hidden shadow-sm"
     >
       {/* ── Header row ── */}
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-3 p-4 text-left active:bg-[#334155]/40 transition-colors touch-manipulation select-none"
+        className="w-full flex items-center gap-3 p-4 text-left active:bg-[var(--color-surface-2)] transition-colors touch-manipulation select-none"
       >
         {/* Icon */}
         <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shrink-0">
-          <ShoppingBag className="w-4.5 h-4.5 text-blue-400" />
+          <ShoppingBag className="w-4.5 h-4.5 text-blue-600 dark:text-blue-400" />
         </div>
 
         {/* Left info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[#E2E8F0] font-semibold text-sm font-mono leading-tight">
+            <span className="text-[var(--color-text)] font-semibold text-sm font-mono leading-tight">
               {sale.invoiceNumber || '—'}
             </span>
             {sale.isPrivate && (
-              <span className="text-[9px] font-medium text-[#64748B] bg-[#334155] px-1.5 py-0.5 rounded-full">
+              <span className="text-[9px] font-medium text-[var(--color-text-muted)] bg-[var(--color-surface-2)] px-1.5 py-0.5 rounded-full">
                 PRIVATE
               </span>
             )}
           </div>
-          <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-[#64748B] flex-wrap">
+          <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-[var(--color-text-muted)] flex-wrap">
             <span>{fmtDate(sale.createdAt)}</span>
             <span>·</span>
             <span>{fmtTime(sale.createdAt)}</span>
             {sale.customerId?.name && (
               <>
                 <span>·</span>
-                <span className="flex items-center gap-0.5 text-[#94A3B8]">
+                <span className="flex items-center gap-0.5 text-[var(--color-text-secondary)]">
                   <User className="w-2.5 h-2.5" />
                   {sale.customerId.name}
                 </span>
@@ -201,11 +208,11 @@ function OrderCard({ sale, onInvoice, onShare }) {
 
         {/* Right info */}
         <div className="flex flex-col items-end gap-1 shrink-0">
-          <span className="text-[#E2E8F0] font-semibold text-sm tabular-nums">
+          <span className="text-[var(--color-text)] font-semibold text-sm tabular-nums">
             {fmtTotal(sale.totalAmount)}
           </span>
           <div className="flex items-center gap-1.5">
-            <span className="text-[10px] text-[#64748B]">{itemCount} item{itemCount !== 1 ? 's' : ''}</span>
+            <span className="text-[10px] text-[var(--color-text-muted)]">{itemCount} item{itemCount !== 1 ? 's' : ''}</span>
             <PayBadge method={sale.paymentMethod} />
           </div>
         </div>
@@ -216,7 +223,7 @@ function OrderCard({ sale, onInvoice, onShare }) {
           transition={{ duration: 0.2 }}
           className="ml-1 shrink-0"
         >
-          <ChevronDown className="w-4 h-4 text-[#475569]" />
+          <ChevronDown className="w-4 h-4 text-[var(--color-text-disabled)]" />
         </motion.div>
       </button>
 
@@ -231,7 +238,7 @@ function OrderCard({ sale, onInvoice, onShare }) {
             transition={{ duration: 0.22, ease: [0.25, 0.1, 0.25, 1] }}
             className="overflow-hidden"
           >
-            <div className="border-t border-[#334155] px-4 py-4 space-y-4">
+            <div className="border-t border-[var(--color-border)] px-4 py-4 space-y-4">
               {/* Items */}
               <div className="space-y-2">
                 {(sale.items || []).map((item, i) => {
@@ -239,16 +246,16 @@ function OrderCard({ sale, onInvoice, onShare }) {
                   return (
                     <div key={i} className="flex items-center justify-between text-xs">
                       <div className="flex items-center gap-2 min-w-0">
-                        <div className="w-1.5 h-1.5 rounded-full bg-[#475569] shrink-0" />
-                        <span className="text-[#94A3B8] truncate">{item.name}</span>
-                        <span className="text-[#64748B] shrink-0">×{item.quantity}</span>
+                        <div className="w-1.5 h-1.5 rounded-full bg-[var(--color-surface-2-hover)] shrink-0" />
+                        <span className="text-[var(--color-text-secondary)] truncate">{item.name}</span>
+                        <span className="text-[var(--color-text-muted)] shrink-0">×{item.quantity}</span>
                         {item.discount > 0 && (
                           <span className="text-emerald-500 shrink-0 text-[10px]">
                             -{formatDiscountPct(item.discount)}%
                           </span>
                         )}
                       </div>
-                      <span className="text-[#E2E8F0] font-medium tabular-nums shrink-0 ml-4">
+                      <span className="text-[var(--color-text)] font-medium tabular-nums shrink-0 ml-4">
                         ₹{lineTotal.toFixed(0)}
                       </span>
                     </div>
@@ -257,33 +264,33 @@ function OrderCard({ sale, onInvoice, onShare }) {
               </div>
 
               {/* Totals breakdown */}
-              <div className="border-t border-[#334155]/60 pt-3 space-y-1.5">
+              <div className="border-t border-[var(--color-border)] pt-3 space-y-1.5">
                 <div className="flex justify-between text-xs">
-                  <span className="text-[#64748B]">Subtotal</span>
-                  <span className="text-[#94A3B8] tabular-nums">₹{subTotal.toFixed(0)}</span>
+                  <span className="text-[var(--color-text-muted)]">Subtotal</span>
+                  <span className="text-[var(--color-text-secondary)] tabular-nums">₹{subTotal.toFixed(0)}</span>
                 </div>
                 {sale.taxRate > 0 && (
                   <div className="flex justify-between text-xs">
-                    <span className="text-[#64748B]">GST ({sale.taxRate}%)</span>
-                    <span className="text-[#94A3B8] tabular-nums">
+                    <span className="text-[var(--color-text-muted)]">GST ({sale.taxRate}%)</span>
+                    <span className="text-[var(--color-text-secondary)] tabular-nums">
                       ₹{((sale.totalAmount / (1 + sale.taxRate / 100)) * (sale.taxRate / 100)).toFixed(0)}
                     </span>
                   </div>
                 )}
-                <div className="flex justify-between text-sm pt-1 border-t border-[#334155]/60">
-                  <span className="text-[#94A3B8] font-medium">Total</span>
-                  <span className="text-[#E2E8F0] font-semibold tabular-nums">{fmtTotal(sale.totalAmount)}</span>
+                <div className="flex justify-between text-sm pt-1 border-t border-[var(--color-border)]">
+                  <span className="text-[var(--color-text-secondary)] font-medium">Total</span>
+                  <span className="text-[var(--color-text)] font-semibold tabular-nums">{fmtTotal(sale.totalAmount)}</span>
                 </div>
                 {sale.dueAmount > 0 && (
                   <div className="flex justify-between text-xs bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2">
-                    <span className="text-amber-400 font-medium">Due Amount</span>
-                    <span className="text-amber-400 font-semibold tabular-nums">{fmtTotal(sale.dueAmount)}</span>
+                    <span className="text-amber-600 dark:text-amber-400 font-medium">Due Amount</span>
+                    <span className="text-amber-600 dark:text-amber-400 font-semibold tabular-nums">{fmtTotal(sale.dueAmount)}</span>
                   </div>
                 )}
               </div>
 
               {sale.notes && (
-                <p className="text-[10px] text-[#64748B] italic border-l-2 border-[#334155] pl-2">
+                <p className="text-[10px] text-[var(--color-text-muted)] italic border-l-2 border-[var(--color-border)] pl-2">
                   "{sale.notes}"
                 </p>
               )}
@@ -299,21 +306,21 @@ function OrderCard({ sale, onInvoice, onShare }) {
                 </button>
                 <button
                   onClick={handleRepeat}
-                  className="flex items-center justify-center gap-2 h-11 bg-[#334155] hover:bg-[#475569] active:bg-[#1E293B] rounded-2xl text-[#E2E8F0] font-medium text-xs transition-colors touch-manipulation"
+                  className="flex items-center justify-center gap-2 h-11 bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-2-hover)] active:bg-[var(--color-card)] rounded-2xl text-[var(--color-text)] font-medium text-xs transition-colors touch-manipulation"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                   Repeat Order
                 </button>
                 <button
                   onClick={() => onShare(sale)}
-                  className="flex items-center justify-center gap-2 h-11 bg-[#334155] hover:bg-[#475569] rounded-2xl text-[#E2E8F0] font-medium text-xs transition-colors touch-manipulation"
+                  className="flex items-center justify-center gap-2 h-11 bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-2-hover)] rounded-2xl text-[var(--color-text)] font-medium text-xs transition-colors touch-manipulation"
                 >
                   <Share2 className="w-3.5 h-3.5" />
                   Share
                 </button>
                 <button
                   onClick={handleCopy}
-                  className="flex items-center justify-center gap-2 h-11 bg-[#334155] hover:bg-[#475569] rounded-2xl text-[#94A3B8] font-medium text-xs transition-colors touch-manipulation"
+                  className="flex items-center justify-center gap-2 h-11 bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-2-hover)] rounded-2xl text-[var(--color-text-secondary)] font-medium text-xs transition-colors touch-manipulation"
                 >
                   <Copy className="w-3.5 h-3.5" />
                   Copy Details
@@ -391,17 +398,16 @@ export default function Orders() {
 
   if (!shopId) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh]" style={{ background: '#0F172A', borderRadius: '1.5rem' }}>
-        <ClipboardList className="w-12 h-12 mb-4 text-[#334155]" />
-        <p className="text-[#94A3B8] font-medium">Select a shop to view orders</p>
+      <div className="flex flex-col items-center justify-center min-h-[60vh] rounded-3xl bg-[var(--color-bg)]">
+        <ClipboardList className="w-12 h-12 mb-4 text-[var(--color-text-disabled)]" />
+        <p className="text-[var(--color-text-secondary)] font-medium">Select a shop to view orders</p>
       </div>
     );
   }
 
   return (
     <div
-      className="min-h-screen -mx-4 -mt-4 sm:-mx-6 px-4 pt-5 pb-24 sm:pb-8 overflow-y-auto"
-      style={{ background: '#0F172A' }}
+      className="min-h-screen -mx-4 -mt-4 sm:-mx-6 px-4 pt-5 pb-24 sm:pb-8 overflow-y-auto bg-[var(--color-bg)]"
       {...swipeHandlers}
     >
       <div className=" mx-auto space-y-4">
@@ -412,11 +418,11 @@ export default function Orders() {
         {/* ── Header ── */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-[#E2E8F0] font-semibold text-xl flex items-center gap-2">
-              <ClipboardList className="w-5 h-5 text-blue-400" />
+            <h1 className="text-[var(--color-text)] font-semibold text-xl flex items-center gap-2">
+              <ClipboardList className="w-5 h-5 text-blue-600 dark:text-blue-400" />
               Orders
             </h1>
-            <p className="text-[#64748B] text-xs mt-0.5">
+            <p className="text-[var(--color-text-muted)] text-xs mt-0.5">
               {activeShop?.name}
             </p>
           </div>
@@ -424,11 +430,11 @@ export default function Orders() {
           {/* Stats pill */}
           <div className="flex items-center gap-3">
             <div className="text-right">
-              <p className="text-[#E2E8F0] font-semibold text-sm tabular-nums">{fmtTotal(stats.revenue)}</p>
-              <p className="text-[#64748B] text-[10px]">{stats.count} order{stats.count !== 1 ? 's' : ''}</p>
+              <p className="text-[var(--color-text)] font-semibold text-sm tabular-nums">{fmtTotal(stats.revenue)}</p>
+              <p className="text-[var(--color-text-muted)] text-[10px]">{stats.count} order{stats.count !== 1 ? 's' : ''}</p>
             </div>
             <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
-              <ArrowUpRight className="w-4 h-4 text-blue-400" />
+              <ArrowUpRight className="w-4 h-4 text-blue-600 dark:text-blue-400" />
             </div>
           </div>
         </div>
@@ -442,7 +448,7 @@ export default function Orders() {
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-medium border transition-all whitespace-nowrap touch-manipulation ${
                 periodIdx === i
                   ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-900/40'
-                  : 'bg-[#1E293B] text-[#94A3B8] border-[#334155] hover:border-[#475569] hover:text-[#E2E8F0]'
+                  : 'bg-[var(--color-card)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-[var(--color-surface-2-hover)] hover:text-[var(--color-text)]'
               }`}
             >
               <Calendar className="w-3 h-3" />
@@ -454,19 +460,19 @@ export default function Orders() {
         {/* ── Search + filter row ── */}
         <div className="flex gap-2">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#475569]" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--color-text-disabled)]" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Invoice, customer, product…"
-              className="w-full h-10 pl-9 pr-8 text-sm rounded-xl border border-[#334155] bg-[#1E293B] text-[#E2E8F0] placeholder:text-[#475569] focus:outline-none focus:border-blue-500 transition-colors"
+              className="w-full h-10 pl-9 pr-8 text-sm rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] text-[var(--color-text)] placeholder:text-[var(--color-text-disabled)] focus:outline-none focus:border-blue-500 transition-colors"
             />
             {search && (
               <button
                 onClick={() => setSearch('')}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 touch-manipulation"
               >
-                <X className="w-3.5 h-3.5 text-[#475569] hover:text-[#94A3B8]" />
+                <X className="w-3.5 h-3.5 text-[var(--color-text-disabled)] hover:text-[var(--color-text-secondary)]" />
               </button>
             )}
           </div>
@@ -476,7 +482,7 @@ export default function Orders() {
             className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-colors touch-manipulation ${
               methodFilter
                 ? 'bg-blue-600 border-blue-600 text-white'
-                : 'bg-[#1E293B] border-[#334155] text-[#94A3B8] hover:border-[#475569]'
+                : 'bg-[var(--color-card)] border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-surface-2-hover)]'
             }`}
           >
             <SlidersHorizontal className="w-4 h-4" />
@@ -501,7 +507,7 @@ export default function Orders() {
                     className={`px-3.5 py-2 rounded-xl text-xs font-medium border transition-all touch-manipulation ${
                       methodFilter === key
                         ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-[#1E293B] text-[#94A3B8] border-[#334155] hover:border-[#475569]'
+                        : 'bg-[var(--color-card)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-[var(--color-surface-2-hover)]'
                     }`}
                   >
                     {label}
@@ -523,11 +529,11 @@ export default function Orders() {
             animate={{ opacity: 1, y: 0 }}
             className="flex flex-col items-center justify-center py-20 text-center"
           >
-            <div className="w-16 h-16 rounded-2xl bg-[#1E293B] border border-[#334155] flex items-center justify-center mb-4">
-              <ClipboardList className="w-8 h-8 text-[#334155]" />
+            <div className="w-16 h-16 rounded-2xl bg-[var(--color-card)] border border-[var(--color-border)] flex items-center justify-center mb-4">
+              <ClipboardList className="w-8 h-8 text-[var(--color-text-disabled)]" />
             </div>
-            <p className="text-[#94A3B8] font-medium text-base">No orders found</p>
-            <p className="text-[#64748B] text-sm mt-1">Try a different date range or filter</p>
+            <p className="text-[var(--color-text-secondary)] font-medium text-base">No orders found</p>
+            <p className="text-[var(--color-text-muted)] text-sm mt-1">Try a different date range or filter</p>
             <button
               onClick={() => navigate('/billing')}
               className="mt-5 flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-500 rounded-2xl text-white font-medium text-sm transition-colors touch-manipulation"
@@ -554,17 +560,17 @@ export default function Orders() {
               <button
                 disabled={page === 1}
                 onClick={() => setPage((p) => p - 1)}
-                className="px-4 py-2.5 text-xs font-medium rounded-xl border border-[#334155] text-[#94A3B8] bg-[#1E293B] hover:bg-[#334155] disabled:opacity-30 disabled:cursor-not-allowed transition-colors touch-manipulation"
+                className="px-4 py-2.5 text-xs font-medium rounded-xl border border-[var(--color-border)] text-[var(--color-text-secondary)] bg-[var(--color-card)] hover:bg-[var(--color-surface-2)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors touch-manipulation"
               >
                 ← Previous
               </button>
-              <span className="text-xs text-[#475569]">
+              <span className="text-xs text-[var(--color-text-disabled)]">
                 {filtered.length} shown · pg {page}
               </span>
               <button
                 disabled={!hasMore || isFetching}
                 onClick={() => setPage((p) => p + 1)}
-                className="px-4 py-2.5 text-xs font-medium rounded-xl border border-[#334155] text-[#94A3B8] bg-[#1E293B] hover:bg-[#334155] disabled:opacity-30 disabled:cursor-not-allowed transition-colors touch-manipulation"
+                className="px-4 py-2.5 text-xs font-medium rounded-xl border border-[var(--color-border)] text-[var(--color-text-secondary)] bg-[var(--color-card)] hover:bg-[var(--color-surface-2)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors touch-manipulation"
               >
                 Next →
               </button>
