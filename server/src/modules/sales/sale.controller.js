@@ -136,7 +136,25 @@ const sampleInvoice = asyncHandler(async (req, res) => {
   return success(res, payload, 'Sample invoice generated');
 });
 
+// ── Owner Accepts Pending Website Order ─────────────────────────────────────────
+const acceptOrder = asyncHandler(async (req, res) => {
+  const sale = await saleService.acceptOrder(req.params.id, req.user);
+  logAction(req, LOG_ACTIONS.ORDER_UPDATE, 'sales',
+    `Accepted pending order ${sale.invoiceNumber || sale._id}`,
+    { saleId: req.params.id, total: sale.totalAmount });
+  success(res, { sale }, 'Order accepted — stock updated');
+});
+
+// ── Owner Rejects / Cancels Order ─────────────────────────────────────────────
+const rejectOrder = asyncHandler(async (req, res) => {
+  const sale = await saleService.rejectOrder(req.params.id, req.user, req.body);
+  logAction(req, LOG_ACTIONS.ORDER_UPDATE, 'sales',
+    `Rejected order ${sale.invoiceNumber || sale._id}: ${req.body.reason || 'No reason'}`,
+    { saleId: req.params.id, reason: req.body.reason });
+  success(res, { sale }, 'Order rejected');
+});
+
 module.exports = {
   create, getAll, getOne, refund, partialRefund, publicCheckout, bulkSync,
-  verifyUpi, cancelUpi, update, sampleInvoice,
+  verifyUpi, cancelUpi, update, sampleInvoice, acceptOrder, rejectOrder,
 };

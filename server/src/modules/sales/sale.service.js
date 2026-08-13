@@ -64,10 +64,10 @@ const enrichItems = async (items, { preservePrice = false, skipStockCheck = fals
       if (!variant)
         throw Object.assign(new Error(`Variant (${size}/${color}) not found for "${product.name}"`), { status: 400 });
       if (!skipStockCheck && variant.stock < qty)
-        throw Object.assign(new Error(`Insufficient stock for "${product.name}" [${size}/${color}]`), { status: 400 });
+        throw Object.assign(new Error(`Insufficient stock for "${product.name}" [${size}/${color}]`), { status: 409 });
     } else {
       if (!skipStockCheck && product.stock < qty)
-        throw Object.assign(new Error(`Insufficient stock for "${product.name}"`), { status: 400 });
+        throw Object.assign(new Error(`Insufficient stock for "${product.name}"`), { status: 409 });
     }
 
     // ── Per-variant pricing ────────────────────────────────────────────────────
@@ -133,15 +133,16 @@ const enrichItems = async (items, { preservePrice = false, skipStockCheck = fals
 //   sign = +1 → restore
 const buildStockMovementOps = (items, sign, trackMap = {}) =>
   items.map((item) => {
-    const size  = item.selectedSize  || '';
-    const color = item.selectedColor || '';
-    const qty   = Number(item.quantity);
-    const delta = sign * qty;
+    const size   = String(item.selectedSize  || item.size  || '').trim();
+    const color  = String(item.selectedColor || item.color || '').trim();
+    const qty    = Number(item.quantity);
+    const delta  = sign * qty;
+    const prodId = item.product?._id ? item.product._id : item.product;
 
     // Enriched items carry _trackVariant; stored sale items need the lookup.
     const isVariant = item._trackVariant !== undefined
       ? item._trackVariant
-      : !!(trackMap[item.product?.toString()] && (size || color));
+      : !!(trackMap[prodId?.toString()] && (size || color));
 
     // Only deductions need an availability guard
     const guard = sign < 0 ? { stock: { $gte: qty } } : {};
@@ -150,7 +151,7 @@ const buildStockMovementOps = (items, sign, trackMap = {}) =>
       return {
         updateOne: {
           filter: {
-            _id: item.product,
+            _id: prodId,
             variantStock: { $elemMatch: { size, color, ...guard } },
             ...guard,
           },
@@ -162,7 +163,7 @@ const buildStockMovementOps = (items, sign, trackMap = {}) =>
 
     return {
       updateOne: {
-        filter: { _id: item.product, ...guard },
+        filter: { _id: prodId, ...guard },
         update: { $inc: { stock: delta } },
       },
     };
@@ -523,99 +524,101 @@ const createSale = async (user, data) => {
     }
   }
 
-  // ── Reserve the invoice number BEFORE the transaction ───────────────────────
-  // Deliberately outside: `withTransaction` retries its callback on transient
-  // errors (write conflict, or the upsert creating the counter collection), and
-  // re-running the reservation inside made a retry consume a second number while
-  // the first was still claimed — surfacing as a duplicate-key 409 and a FAILED
-  // SALE. The counter is atomic on its own, so reserving here is safe.
-  //
-  // Trade-off: a rolled-back sale burns its number, leaving a gap in the series.
-  // A gap is an accounting annotation; a failed sale at the counter is lost
-  // revenue. Gaps are traceable via invoiceSeq, so this is the safer default.
-  const { invoiceNumber, seq, fy } = await nextInvoiceNumber(shopId, {
-    prefix: gstShop.invoicePrefix || 'INV',
-  });
-
-  const session = await mongoose.startSession();
+  // ── Reserve unique invoice number with retry loop ───────────────────────────
   let sale;
+  let lastErr;
 
-  try {
-    await session.withTransaction(async () => {
-      // Deduct stock atomically — 409 if any item's stock is exhausted
-      await deductStock(enrichedItems, session);
-
-      // Create sale document inside the same transaction
-      [sale] = await Sale.create([{
-        invoiceNumber,
-        invoiceSeq: seq,
-        invoiceFy:  fy,
-        gst: gstBreakdown,
-        items: saleItems,
-        totalAmount: finalTotal,
-        totalDiscount,
-        totalProfit,
-        taxAmount,
-        taxRate: collectsGst ? taxRate : 0,
-        paymentMethod: resolvedMethod,
-        payments:      resolvedPayments,
-        customerId:    customerId || null,
-        shopId,
-        ownerId,
-        staffId:    user._id,
-        notes,
-        status:        isUpiQrSale ? 'pending' : 'completed',
-        paymentStatus: isUpiQrSale ? 'pending' : 'paid',
-        isUpiQr:       isUpiQrSale,
-        ...(isUpiQrSale ? {
-          upiTxn: {
-            refId:         upiRefId,
-            vpa:           shopUpi.upiSettings.vpa,
-            amount:        finalTotal,
-            qrGeneratedAt: new Date(),
-          },
-        } : {}),
-        isPrivate:  !!isPrivate,
-        dueAmount:  resolvedMethod === 'credit' ? Math.max(0, Number(dueAmount) || 0) : 0,
-        // Persist the client-side UUID so we can detect duplicate sync retries
-        ...(offlineId ? { offlineId } : {}),
-      }], { session });
-
-      // Customer spend and credit ledger are applied at verification time for
-      // UPI QR bills — nothing is owed or spent until the money actually lands.
-      if (customerId && !isUpiQrSale) {
-        await Customer.findByIdAndUpdate(
-          customerId,
-          {
-            $inc:  { totalPurchases: 1, totalSpent: finalTotal },
-            $push: { purchaseHistory: { saleId: sale._id, amount: finalTotal, date: sale.createdAt } },
-          },
-          { session }
-        );
-      }
-
-      // ── Credit ledger entry ──────────────────────────────────────────────────
-      if (resolvedMethod === 'credit' && customerId && !isUpiQrSale) {
-        // Record what is actually deferred. A split tender names the credit
-        // portion explicitly; otherwise honour dueAmount, falling back to the
-        // whole bill. Using finalTotal when dueAmount is smaller overstated the
-        // customer's debt (and disagreed with verifyUpiPayment).
-        const explicitDue = Math.min(finalTotal, Number(dueAmount) || 0);
-        const creditAmt   = resolvedPayments.find((p) => p.method === 'credit')?.amount
-          ?? (explicitDue > 0 ? explicitDue : finalTotal);
-        await ledgerService.recordCredit({
-          customerId,
-          shopId,
-          saleId:     sale._id,
-          amount:     creditAmt,
-          notes:      notes || '',
-          recordedBy: user._id,
-        }, session);
-      }
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    const { invoiceNumber, seq, fy } = await nextInvoiceNumber(shopId, {
+      prefix: gstShop.invoicePrefix || 'INV',
     });
-  } finally {
-    await session.endSession();
+
+    const session = await mongoose.startSession();
+
+    try {
+      await session.withTransaction(async () => {
+        // Deduct stock atomically — 409 if any item's stock is exhausted
+        await deductStock(enrichedItems, session);
+
+        // Create sale document inside the same transaction
+        [sale] = await Sale.create([{
+          invoiceNumber,
+          invoiceSeq: seq,
+          invoiceFy:  fy,
+          gst: gstBreakdown,
+          items: saleItems,
+          totalAmount: finalTotal,
+          totalDiscount,
+          totalProfit,
+          taxAmount,
+          taxRate: collectsGst ? taxRate : 0,
+          paymentMethod: resolvedMethod,
+          payments:      resolvedPayments,
+          customerId:    customerId || null,
+          shopId,
+          ownerId,
+          staffId:    user._id,
+          notes,
+          status:        isUpiQrSale ? 'pending' : 'completed',
+          paymentStatus: isUpiQrSale ? 'pending' : 'paid',
+          isUpiQr:       isUpiQrSale,
+          ...(isUpiQrSale ? {
+            upiTxn: {
+              refId:         upiRefId,
+              vpa:           shopUpi.upiSettings.vpa,
+              amount:        finalTotal,
+              qrGeneratedAt: new Date(),
+            },
+          } : {}),
+          isPrivate:  !!isPrivate,
+          dueAmount:  resolvedMethod === 'credit' ? Math.max(0, Number(dueAmount) || 0) : 0,
+          // Persist the client-side UUID so we can detect duplicate sync retries
+          ...(offlineId ? { offlineId } : {}),
+        }], { session });
+
+        // Customer spend and credit ledger are applied at verification time for
+        // UPI QR bills — nothing is owed or spent until the money actually lands.
+        if (customerId && !isUpiQrSale) {
+          await Customer.findByIdAndUpdate(
+            customerId,
+            {
+              $inc:  { totalPurchases: 1, totalSpent: finalTotal },
+              $push: { purchaseHistory: { saleId: sale._id, amount: finalTotal, date: sale.createdAt } },
+            },
+            { session }
+          );
+        }
+
+        // ── Credit ledger entry ──────────────────────────────────────────────────
+        if (resolvedMethod === 'credit' && customerId && !isUpiQrSale) {
+          const explicitDue = Math.min(finalTotal, Number(dueAmount) || 0);
+          const creditAmt   = resolvedPayments.find((p) => p.method === 'credit')?.amount
+            ?? (explicitDue > 0 ? explicitDue : finalTotal);
+          await ledgerService.recordCredit({
+            customerId,
+            shopId,
+            saleId:     sale._id,
+            amount:     creditAmt,
+            notes:      notes || '',
+            recordedBy: user._id,
+          }, session);
+        }
+      });
+
+      if (sale) break;
+    } catch (err) {
+      lastErr = err;
+      if (err.code === 11000 && (err.keyPattern?.invoiceNumber || (err.message && err.message.includes('invoiceNumber')))) {
+        console.warn(`[createSale] invoiceNumber ${invoiceNumber} collision on attempt ${attempt}. Retrying...`);
+        continue;
+      }
+      throw err;
+    } finally {
+      await session.endSession();
+    }
   }
+
+  if (!sale) throw lastErr || new Error('Could not reserve a unique invoice number for this sale.');
 
   // Bust dashboard cache so next load sees fresh totals
   cache.del(`dashboard:${shopId}`);
@@ -644,19 +647,24 @@ const createPublicSale = async (data) => {
   if (!shop || !shop.isActive)
     throw Object.assign(new Error('Shop not found'), { status: 404 });
 
-  const { enrichedItems, totalAmount, totalDiscount, totalProfit } = await enrichItems(items);
+  const { enrichedItems, totalAmount, totalDiscount, totalProfit } = await enrichItems(items, { skipStockCheck: true });
   const taxRate    = shop.taxRate || 0;
   const taxAmount  = totalAmount * (taxRate / 100);
   const finalTotal = totalAmount + taxAmount;
+
+  const { invoiceNumber, seq, fy } = await nextInvoiceNumber(shopId, {
+    prefix: shop.invoicePrefix || 'INV',
+  });
 
   const session = await mongoose.startSession();
   let sale;
 
   try {
     await session.withTransaction(async () => {
-      await deductStock(enrichedItems, session);
+      // NOTE: Stock is NOT deducted here for pending website orders!
+      // Stock is only deducted when the shop owner ACCEPTS the order.
 
-      // Find-or-create customer within the transaction for consistency
+      // Find-or-create customer within transaction for consistency
       let customer = await Customer.findOne({ shopId, phone: customerPhone }, null, { session });
       if (!customer) {
         [customer] = await Customer.create([{
@@ -669,6 +677,9 @@ const createPublicSale = async (data) => {
       }
 
       [sale] = await Sale.create([{
+        invoiceNumber,
+        invoiceSeq: seq,
+        invoiceFy:  fy,
         items: enrichedItems,
         totalAmount:   finalTotal,
         totalDiscount,
@@ -676,6 +687,7 @@ const createPublicSale = async (data) => {
         taxAmount,
         taxRate,
         paymentMethod: paymentMethod || 'cash',
+        paymentStatus: 'pending',
         customerId:    customer._id,
         shopId,
         ownerId:       shop.owner,
@@ -685,24 +697,158 @@ const createPublicSale = async (data) => {
         status:        'pending',
         isOnlineOrder: true,
       }], { session });
-
-      await Customer.findByIdAndUpdate(
-        customer._id,
-        {
-          $inc:  { totalPurchases: 1, totalSpent: finalTotal },
-          $push: { purchaseHistory: { saleId: sale._id, amount: finalTotal, date: sale.createdAt } },
-        },
-        { session }
-      );
     });
   } finally {
     await session.endSession();
+  }
+
+  // Create notification for shop owner
+  try {
+    const Notification = require('../notifications/notification.model');
+    await Notification.create({
+      userId:  shop.owner,
+      ownerId: shop.owner,
+      shopId,
+      type:    'new_order',
+      title:   'New Website Order',
+      message: `New order from ${customerName} (${customerPhone}) for ₹${finalTotal.toFixed(2)}`,
+      link:    '/orders',
+    });
+  } catch (err) {
+    console.error('[Notification] Failed to create website order notification:', err.message);
   }
 
   cache.del(`dashboard:${shopId}`);
 
   await sale.populate([{ path: 'shopId', select: 'name address phone currency logo' }]);
   return sale;
+};
+
+// ── Owner Accepts a Pending Order ──────────────────────────────────────────────
+const acceptOrder = async (id, user) => {
+  const sale = await Sale.findById(id);
+  if (!sale) throw Object.assign(new Error('Order not found'), { status: 404 });
+
+  if (user.role !== 'super_admin' && !user.shops.some((s) => s.toString() === sale.shopId.toString())) {
+    throw Object.assign(new Error('Access denied'), { status: 403 });
+  }
+
+  if (sale.status !== 'pending') {
+    throw Object.assign(new Error(`Order is not pending (current status: ${sale.status})`), { status: 400 });
+  }
+
+  const session = await mongoose.startSession();
+  let acceptedSale;
+
+  try {
+    await session.withTransaction(async () => {
+      // Atomic status check inside transaction to prevent double-acceptance
+      const pendingSale = await Sale.findOne({ _id: id, status: 'pending' }, null, { session });
+      if (!pendingSale) {
+        throw Object.assign(new Error('Order is no longer pending or has already been accepted/rejected'), { status: 409 });
+      }
+
+      // Re-enrich items from stored order to check current DB stock and variants
+      const rawItems = pendingSale.items.map((i) => ({
+        productId:     i.product?.toString() || i.productId?.toString(),
+        quantity:      i.quantity,
+        selectedSize:  i.selectedSize || '',
+        selectedColor: i.selectedColor || '',
+        price:         i.price,
+        discount:      i.discount,
+      }));
+
+      const { enrichedItems } = await enrichItems(rawItems, { skipStockCheck: false });
+
+      // Deduct stock atomically — will throw 409 if stock is insufficient
+      await deductStock(enrichedItems, session);
+
+      // Update order status to completed and paid
+      acceptedSale = await Sale.findByIdAndUpdate(
+        id,
+        {
+          status:        'completed',
+          paymentStatus: 'paid',
+          acceptedAt:    new Date(),
+          acceptedBy:    user._id,
+        },
+        { new: true, session }
+      );
+
+      if (pendingSale.customerId) {
+        await Customer.findByIdAndUpdate(
+          pendingSale.customerId,
+          {
+            $inc:  { totalPurchases: 1, totalSpent: pendingSale.totalAmount },
+            $push: { purchaseHistory: { saleId: pendingSale._id, amount: pendingSale.totalAmount, date: new Date() } },
+          },
+          { session }
+        );
+      }
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  cache.del(`dashboard:${sale.shopId.toString()}`);
+
+  stockService.bulkUpdateFromSale({ items: acceptedSale.items, shopId: acceptedSale.shopId.toString() }).catch((err) => {
+    console.error('[StockSnapshot] bulkUpdateFromSale failed:', err.message);
+  });
+
+  await acceptedSale.populate(['customerId', 'staffId', 'acceptedBy', { path: 'shopId', select: 'name address phone currency logo' }]);
+  return acceptedSale;
+};
+
+// ── Owner Rejects / Cancels an Order ──────────────────────────────────────────
+const rejectOrder = async (id, user, { reason = '' } = {}) => {
+  const sale = await Sale.findById(id);
+  if (!sale) throw Object.assign(new Error('Order not found'), { status: 404 });
+
+  if (user.role !== 'super_admin' && !user.shops.some((s) => s.toString() === sale.shopId.toString())) {
+    throw Object.assign(new Error('Access denied'), { status: 403 });
+  }
+
+  if (sale.status === 'rejected' || sale.status === 'cancelled') {
+    throw Object.assign(new Error('Order is already rejected/cancelled'), { status: 400 });
+  }
+
+  const session = await mongoose.startSession();
+  let rejectedSale;
+
+  try {
+    await session.withTransaction(async () => {
+      // If order was already completed/accepted, we must restore stock
+      if (sale.status === 'completed' || sale.status === 'accepted') {
+        await restoreStock(sale.items, session);
+      }
+
+      rejectedSale = await Sale.findByIdAndUpdate(
+        id,
+        {
+          status:          'rejected',
+          paymentStatus:   'cancelled',
+          rejectedAt:      new Date(),
+          rejectedBy:      user._id,
+          rejectionReason: reason || 'Rejected by shop owner',
+        },
+        { new: true, session }
+      );
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  cache.del(`dashboard:${sale.shopId.toString()}`);
+
+  if (sale.status === 'completed' || sale.status === 'accepted') {
+    stockService.bulkUpdateFromRefund({ items: sale.items, shopId: sale.shopId.toString() }).catch((err) => {
+      console.error('[StockSnapshot] bulkUpdateFromRefund failed:', err.message);
+    });
+  }
+
+  await rejectedSale.populate(['customerId', 'staffId', 'rejectedBy', { path: 'shopId', select: 'name address phone currency logo' }]);
+  return rejectedSale;
 };
 
 // ── List sales ────────────────────────────────────────────────────────────────
@@ -1331,4 +1477,5 @@ module.exports = {
   createSale, createPublicSale, getSales, getSaleById,
   refundSale, partialRefund, bulkSyncSales,
   verifyUpiPayment, cancelUpiPayment, updateSale,
+  acceptOrder, rejectOrder,
 };

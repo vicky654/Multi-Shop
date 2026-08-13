@@ -54,18 +54,33 @@ function financialYear(date = new Date()) {
 async function nextInvoiceNumber(shopId, { prefix = 'INV', session } = {}) {
   const fy = financialYear();
 
-  const counter = await InvoiceCounter.findOneAndUpdate(
+  let counter = await InvoiceCounter.findOneAndUpdate(
     { shopId, fy },
     { $inc: { seq: 1 } },
     { new: true, upsert: true, setDefaultsOnInsert: true, session }
   );
 
-  const seq = counter.seq;
+  let seq = counter.seq;
+  let invoiceNumber = `${prefix}/${fy}/${String(seq).padStart(6, '0')}`;
+
+  // Collision guard: if counter is behind existing documents in DB, advance until unique
+  const Sale = mongoose.models.Sale || require('./sale.model');
+  let exists = await Sale.exists({ invoiceNumber });
+  while (exists) {
+    counter = await InvoiceCounter.findOneAndUpdate(
+      { shopId, fy },
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true, session }
+    );
+    seq = counter.seq;
+    invoiceNumber = `${prefix}/${fy}/${String(seq).padStart(6, '0')}`;
+    exists = await Sale.exists({ invoiceNumber });
+  }
+
   return {
     seq,
     fy,
-    // e.g. INV/2026-27/000123 — sequential, per-shop, per-FY, audit-friendly
-    invoiceNumber: `${prefix}/${fy}/${String(seq).padStart(6, '0')}`,
+    invoiceNumber,
   };
 }
 

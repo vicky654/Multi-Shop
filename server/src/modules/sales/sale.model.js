@@ -121,8 +121,15 @@ const saleSchema = new mongoose.Schema(
     invoiceSeq: { type: Number },
     invoiceFy:  { type: String, default: '' },
     // 'pending'   — awaiting payment verification (UPI QR) or an online order
-    // 'cancelled' — payment failed/cancelled before verification; stock restored
-    status:     { type: String, enum: ['completed', 'refunded', 'pending', 'cancelled'], default: 'completed' },
+    // 'accepted'  — accepted by shop owner (stock deducted)
+    // 'rejected'  — rejected by shop owner (stock untouched)
+    // 'cancelled' — payment failed/cancelled before verification or cancelled by owner/customer; stock restored
+    // 'draft'     — draft bill (stock untouched)
+    status:     {
+      type: String,
+      enum: ['completed', 'accepted', 'refunded', 'pending', 'cancelled', 'rejected', 'draft'],
+      default: 'completed',
+    },
 
     // ── Payment lifecycle ──────────────────────────────────────────────────────
     // Cash/card/credit settle at the counter, so they are 'paid' on creation.
@@ -135,6 +142,13 @@ const saleSchema = new mongoose.Schema(
     },
     isUpiQr: { type: Boolean, default: false },  // settled via scan-to-pay QR
     upiTxn:  { type: upiTxnSchema, default: undefined },
+
+    // ── Order Acceptance tracking ──────────────────────────────────────────────
+    acceptedAt:      { type: Date, default: null },
+    acceptedBy:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    rejectedAt:      { type: Date, default: null },
+    rejectedBy:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    rejectionReason: { type: String, default: '' },
 
     // ── Modification audit trail ───────────────────────────────────────────────
     editHistory:  [saleEditSchema],

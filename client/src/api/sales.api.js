@@ -7,6 +7,8 @@ export const salesApi = {
   create:   (data)   => api.post('/sales', data),
   refund:   (id)     => api.patch(`/sales/${id}/refund`),
   partialRefund: (id, refundItems) => api.patch(`/sales/${id}/partial-refund`, { refundItems }),
+  acceptOrder: (id)     => api.patch(`/sales/${id}/accept`),
+  rejectOrder: (id, reason) => api.patch(`/sales/${id}/reject`, { reason }),
 
   /** Edit a completed bill. Requires `reason`; server appends an audit entry. */
   update:   (id, data) => api.patch(`/sales/${id}`, data),

@@ -96,14 +96,14 @@ export default function Billing() {
         // Must be `productId` — both the POST /sales validator and
         // enrichItems() read item.productId. Sending `product` here made every
         // checkout fail validation with a 422.
-        productId: item.productId,
+        productId: item.productId || item._id || item.product,
         name: item.name,
         price: item.price,
         quantity: item.quantity,
         discount: +discPct.toFixed(4),
         subtotal: item.price * item.quantity * (1 - discPct / 100),
-        selectedSize:  item.selectedSize  || '',
-        selectedColor: item.selectedColor || '',
+        selectedSize:  item.selectedSize  || item.size || '',
+        selectedColor: item.selectedColor || item.color || '',
       };
     });
 

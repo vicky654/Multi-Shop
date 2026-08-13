@@ -64,6 +64,17 @@ router.post('/bulk-sync',
 router.patch('/:id/refund',         allowRoles('super_admin', 'owner', 'manager'), ctrl.refund);
 router.patch('/:id/partial-refund', allowRoles('super_admin', 'owner', 'manager'), ctrl.partialRefund);
 
+// ── Order Acceptance / Rejection ──────────────────────────────────────────────
+router.patch('/:id/accept',
+  allowRoles('super_admin', 'owner', 'manager', 'billing_staff'),
+  ctrl.acceptOrder
+);
+
+router.patch('/:id/reject',
+  allowRoles('super_admin', 'owner', 'manager', 'billing_staff'),
+  ctrl.rejectOrder
+);
+
 // ── UPI QR settlement ─────────────────────────────────────────────────────────
 // Any cashier who can take a payment can confirm one, but a transaction
 // reference is mandatory — the service rejects a bare confirmation.
