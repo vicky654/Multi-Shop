@@ -236,8 +236,12 @@ Cypress.Commands.add('checkout', () => {
 
 // ── cy.closeInvoice() ────────────────────────────────────────────────────────
 Cypress.Commands.add('closeInvoice', () => {
+  // Click the real close control. `cy.get('button').last()` depended on the close
+  // button happening to be last in the DOM, so any extra action in the modal
+  // footer (share, edit bill) silently made this click something else and left
+  // the modal — and its backdrop — on screen.
   cy.get('[data-testid="invoice-modal"]').within(() => {
-    cy.get('button').last().click();
+    cy.get('[aria-label="Close invoice"]').click();
   });
   cy.get('[data-testid="invoice-modal"]').should('not.exist');
 });

@@ -10,3 +10,5 @@ cypress.env.json
 cypress/screenshots
 cypress/videos
 cypress/results
+# Files saved by download assertions in the E2E suite — test output, not source.
+cypress/downloads

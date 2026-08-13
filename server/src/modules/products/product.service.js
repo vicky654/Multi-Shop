@@ -365,7 +365,17 @@ const exportAllProducts = async (user, shopId, format = 'csv') => {
   let shopName = '';
   if (shopId) {
     const shop = await Shop.findById(shopId).select('name').lean();
-    shopName = shop?.name || '';
+    // A supplied shopId that resolves to nothing means the caller is working from
+    // a stale reference — a deleted shop still held in a client's active-shop
+    // state. Silently continuing produced an export that spanned EVERY shop the
+    // user owns under a generic filename, which is both surprising and a data
+    // scoping question the owner never got to answer. Fail instead.
+    if (!shop) throw Object.assign(new Error('Shop not found'), { status: 404 });
+    shopName = shop.name || '';
+  } else {
+    // A deliberate all-shops export is legitimate for a multi-shop owner, but the
+    // file has to say so rather than looking like a single-shop export.
+    shopName = 'all-shops';
   }
   const day = new Date().toISOString().slice(0, 10);
   const filename = exportFilename('products', shopName, day, fmt);

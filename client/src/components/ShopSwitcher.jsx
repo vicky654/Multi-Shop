@@ -21,6 +21,7 @@ export default function ShopSwitcher() {
   return (
     <div className="relative">
       <button
+        data-testid="shop-switcher"
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 transition text-sm"
       >
@@ -37,6 +38,7 @@ export default function ShopSwitcher() {
             {shops.map((shop) => (
               <button
                 key={shop._id}
+                data-testid={`shop-option-${shop._id}`}
                 onClick={() => { setActiveShop(shop); setOpen(false); }}
                 className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-700 transition ${
                   activeShop?._id === shop._id ? 'text-blue-400 bg-gray-700' : 'text-gray-300'
