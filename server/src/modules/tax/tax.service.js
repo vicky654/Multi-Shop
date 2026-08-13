@@ -2,6 +2,7 @@ const mongoose   = require('mongoose');
 const Sale       = require('../sales/sale.model');
 const Expense    = require('../expenses/expense.model');
 const TaxProfile = require('./taxProfile.model');
+const Shop       = require('../shops/shop.model');
 const { buildTaxSummary } = require('./tax.engine');
 const { resolveRules, financialYearOf, financialYearRange } = require('./taxRules');
 const purchaseService = require('../purchases/purchase.service');
@@ -226,6 +227,26 @@ async function getTaxSummary(user, shopId, { financialYear } = {}) {
   const { start, end } = financialYearRange(fy);
 
   const profile = await getProfile(user, shopId);
+
+  /**
+   * The GST scheme lives on the SHOP, not the tax profile.
+   *
+   * It sits with the GSTIN and state code, it is what Settings → Tax/GST writes,
+   * and billing reads it to decide whether to charge GST at all. Reading it from
+   * TaxProfile here gave two sources of truth: a shop switched to composition in
+   * Settings still showed "regular" on this screen and kept claiming input tax
+   * credit it is not entitled to. TaxProfile remains the authority for income-tax
+   * basis, entity type and the confirmed rate sets, and its gstScheme is used only
+   * as a fallback for profiles written before this was settled.
+   */
+  const shopDoc = shopId
+    ? await Shop.findById(shopId).select('gstScheme').lean()
+    : null;
+  const effectiveProfile = {
+    ...profile,
+    gstScheme: shopDoc?.gstScheme || profile.gstScheme || 'regular',
+  };
+
   const stored  = profile.ruleSets instanceof Map
     ? profile.ruleSets.get(fy)
     : profile.ruleSets?.[fy];
@@ -262,7 +283,7 @@ async function getTaxSummary(user, shopId, { financialYear } = {}) {
       assets: [],   // Phase 2: BusinessAsset records feed depreciation
     },
     rules,
-    profile
+    effectiveProfile
   );
 
   return {

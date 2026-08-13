@@ -10,6 +10,7 @@ import useAuthStore from '../store/authStore';
 import Modal from '../components/Modal';
 import { usePermissions } from '../hooks/usePermissions';
 import useThemeStore from '../store/themeStore';
+import GstSettings from '../components/settings/GstSettings';
 import { PRIMARY_PRESETS } from '../styles/theme';
 import { BANNER_TEMPLATES } from '../components/SaleBanner';
 import { isValidVpa } from '../utils/upi';
@@ -355,6 +356,9 @@ export default function Settings() {
           {!shops.length && <p className="text-sm text-gray-400 text-center py-8">No shops yet. Create your first shop!</p>}
         </div>
       </section>
+
+      {/* ── Tax / GST ── */}
+      <GstSettings shop={activeShop} />
 
       {/* ── Payments → UPI Configuration ── */}
       {can('settings') && activeShop && (
@@ -704,8 +708,12 @@ export default function Settings() {
               <input type="email" value={shopForm.email} onChange={(e) => setShopForm((f) => ({ ...f, email: e.target.value }))} className="ui-input" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Tax Rate (%)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Default GST Rate (%)</label>
               <input type="number" min="0" max="100" value={shopForm.taxRate} onChange={(e) => setShopForm((f) => ({ ...f, taxRate: e.target.value }))} className="ui-input" />
+              {/* The same field lives in Tax / GST alongside GSTIN, scheme and
+                  round-off. Kept here for convenience when creating a shop; both
+                  write the identical field, so they cannot drift apart. */}
+              <p className="mt-1 text-xs text-gray-400">Full GST setup is under Tax / GST below</p>
             </div>
             <div className="col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>

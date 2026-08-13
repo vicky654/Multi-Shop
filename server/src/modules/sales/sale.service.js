@@ -355,9 +355,25 @@ const createSale = async (user, data) => {
   // The shop supplies the GST configuration; the customer's GSTIN (if any)
   // determines place of supply and therefore CGST+SGST vs IGST.
   const gstShop = await Shop.findById(shopId)
-    .select('gstNumber stateCode gstMode invoicePrefix invoiceRoundOff taxRate name')
+    .select('gstNumber stateCode gstMode gstScheme invoicePrefix invoiceRoundOff taxRate name')
     .lean();
   if (!gstShop) throw Object.assign(new Error('Shop not found'), { status: 404 });
+
+  /**
+   * A shop that is NOT on the regular scheme must not collect GST from customers.
+   *
+   * A composition dealer pays a flat percentage of turnover out of their own
+   * pocket and is not permitted to charge GST on the invoice; an unregistered shop
+   * has no authority to collect it at all. Before this, the shop's scheme was
+   * never consulted here, so a composition shop's bills still added output GST —
+   * money collected as tax that the shop is not entitled to collect, and which
+   * Tax & Profit then correctly refused to treat as a liability. The two views
+   * disagreed because billing had no idea what scheme the shop was on.
+   *
+   * Forced server-side: the client cannot opt back in by sending a taxRate.
+   */
+  const scheme = gstShop.gstScheme || 'regular';
+  const collectsGst = scheme === 'regular';
 
   const gstCustomer = customerId
     ? await Customer.findById(customerId).select('gstNumber stateCode').lean()
@@ -376,7 +392,9 @@ const createSale = async (user, data) => {
       // A product-level GST rate wins over the invoice rate; null means "not
       // configured" and falls back. `== null` catches undefined too — `||` would
       // let a legitimately 0% (zero-rated) product be taxed at the invoice rate.
-      taxRate:     i.gstRate == null ? taxRate : i.gstRate,
+      // Not on the regular scheme -> no output tax on the invoice, whatever the
+      // request or the product says.
+      taxRate:     collectsGst ? (i.gstRate == null ? taxRate : i.gstRate) : 0,
       name:        i.name,
       hsnCode:     i.hsnCode,
     })),
@@ -391,9 +409,16 @@ const createSale = async (user, data) => {
   const ownerId    = user.role === 'owner' ? user._id : (user.ownerId || user._id);
 
   // Surfaced on the invoice instead of silently issuing a possibly-wrong split.
-  const gstConfigWarning = !invoice.stateKnown && taxRate > 0
-    ? 'Shop GSTIN/state not configured — tax shown as intra-state (CGST+SGST). Set GSTIN in Settings.'
-    : '';
+  let gstConfigWarning = '';
+  if (!collectsGst && Number(taxRate) > 0) {
+    // The operator asked for tax the shop may not charge. Say so on the record
+    // rather than quietly dropping it.
+    gstConfigWarning = scheme === 'composition'
+      ? 'Composition scheme — GST is not charged to the customer on this invoice.'
+      : 'Shop is not GST registered — no GST charged on this invoice.';
+  } else if (collectsGst && !invoice.stateKnown && taxRate > 0) {
+    gstConfigWarning = 'Shop GSTIN/state not configured — tax shown as intra-state (CGST+SGST). Set GSTIN in Settings.';
+  }
 
   const gstBreakdown = {
     mode:              invoice.gstMode,
@@ -531,7 +556,7 @@ const createSale = async (user, data) => {
         totalDiscount,
         totalProfit,
         taxAmount,
-        taxRate,
+        taxRate: collectsGst ? taxRate : 0,
         paymentMethod: resolvedMethod,
         payments:      resolvedPayments,
         customerId:    customerId || null,
