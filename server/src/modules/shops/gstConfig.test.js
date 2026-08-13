@@ -95,6 +95,37 @@ t('an unrelated edit on a shop that already lacks a GSTIN is ALLOWED', () => {
   assertGstCoherence({ gstNumber: '', gstScheme: 'regular' }, { invoicePrefix: 'ABC' });
   assertGstCoherence({ gstNumber: '', gstScheme: 'regular' }, { taxRate: 5 });
 });
+t('RESTATING an already-stored (regular, no GSTIN) pair is allowed', () => {
+  // gstScheme defaults to 'regular', so every shop created or seeded before a
+  // GSTIN was entered sits here — 2 of the 3 seeded shops do. The Settings form
+  // submits every field at once, so refusing this pair blocked editing the
+  // invoice prefix behind an unrelated GST-registration decision.
+  assertGstCoherence({ gstNumber: '', gstScheme: 'regular' },
+                     { gstNumber: '', gstScheme: 'regular', invoicePrefix: 'ABC' });
+});
+t('restating a stored (composition, no GSTIN) pair is allowed', () => {
+  assertGstCoherence({ gstNumber: '', gstScheme: 'composition' },
+                     { gstNumber: '', gstScheme: 'composition' });
+});
+t('restating the pair on a shop with a GSTIN is allowed', () => {
+  assertGstCoherence({ gstNumber: GSTIN_PB, gstScheme: 'regular' },
+                     { gstNumber: GSTIN_PB, gstScheme: 'regular' });
+});
+t('a shop with no stored scheme is treated as regular for the restate check', () => {
+  // existing.gstScheme absent must default the same way the schema does.
+  assertGstCoherence({ gstNumber: '' }, { gstNumber: '', gstScheme: 'regular' });
+});
+t('the restate allowance does NOT let a set GSTIN be cleared', () => {
+  // The pair differs here, so the rule must still fire.
+  rejects(() => assertGstCoherence({ gstNumber: GSTIN_PB, gstScheme: 'regular' },
+                                   { gstNumber: '', gstScheme: 'regular' }),
+    /GSTIN is required/i);
+});
+t('the restate allowance does NOT let unregistered → regular through', () => {
+  rejects(() => assertGstCoherence({ gstNumber: '', gstScheme: 'unregistered' },
+                                   { gstNumber: '', gstScheme: 'regular' }),
+    /GSTIN is required/i);
+});
 t('switching to unregistered without a GSTIN is allowed', () => {
   assertGstCoherence({ gstNumber: '', gstScheme: 'regular' }, { gstScheme: 'unregistered' });
 });

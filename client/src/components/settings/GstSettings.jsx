@@ -101,7 +101,15 @@ export default function GstSettings({ shop }) {
         ? `A GSTIN is 15 characters — this has ${gstin.length}`
         : 'Invalid GSTIN — the check digit does not match';
     }
-    if (form.gstScheme !== 'unregistered' && !gstin) {
+    // Mirrors the server: a shop that ARRIVED at (regular, no GSTIN) — the state
+    // every shop starts in, since gstScheme defaults to 'regular' — is treated as
+    // "not configured yet", not as an error. Blocking it would stop the owner
+    // editing the invoice prefix on this page until they settled registration.
+    // The rule fires only when this save would actually create the incoherence.
+    const storedGstin  = (shop?.gstNumber || '').trim().toUpperCase();
+    const storedScheme = shop?.gstScheme || 'regular';
+    const pairUnchanged = gstin === storedGstin && form.gstScheme === storedScheme;
+    if (form.gstScheme !== 'unregistered' && !gstin && !pairUnchanged) {
       e.gstScheme = 'A GSTIN is required for the regular and composition schemes';
     }
     const rate = Number(form.taxRate);
@@ -114,7 +122,9 @@ export default function GstSettings({ shop }) {
       e.invoicePrefix = 'Letters, numbers, / and - only (max 10)';
     }
     return e;
-  }, [form]);
+    // shop.* is read for the "pair unchanged" check above, so it belongs here —
+    // otherwise the memo keeps validating against a previously loaded shop.
+  }, [form, shop?.gstNumber, shop?.gstScheme]);
 
   if (!shop) {
     return (

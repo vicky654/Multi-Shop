@@ -142,6 +142,20 @@ function assertGstCoherence(existing, update) {
     gstNumber: update.gstNumber !== undefined ? update.gstNumber : (existing.gstNumber || ''),
     gstScheme: update.gstScheme !== undefined ? update.gstScheme : (existing.gstScheme || 'regular'),
   };
+  const existingNumber = existing.gstNumber || '';
+  const existingScheme = existing.gstScheme || 'regular';
+
+  // A payload that merely RESTATES the stored pair changes nothing, so it cannot
+  // introduce an incoherence — and refusing it breaks a real flow. `gstScheme`
+  // defaults to 'regular', so every shop created or seeded before a GSTIN was
+  // entered sits at (regular, ''). The Settings form submits every field at once,
+  // so refusing that pair would block editing the invoice prefix — or anything
+  // else on the page — behind an unrelated GST-registration decision.
+  //
+  // Genuine transitions are still refused below: clearing a GSTIN that IS set, or
+  // moving onto a registered scheme without one.
+  if (merged.gstNumber === existingNumber && merged.gstScheme === existingScheme) return;
+
   const changingIntoRegistered =
     (update.gstScheme !== undefined && update.gstScheme !== 'unregistered')
     || (update.gstNumber !== undefined && update.gstNumber === '' && merged.gstScheme !== 'unregistered');
