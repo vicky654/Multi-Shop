@@ -34,6 +34,7 @@ export default function StepPricing({
           <Field label="Cost Price (₹)" required error={errors.costPrice}
             hint="What you paid per unit">
             <input
+              data-testid="wizard-costPrice"
               type="number" min="0" step="0.01" value={form.costPrice}
               onChange={(e) => upd('costPrice', e.target.value)}
               placeholder="1000" className={errors.costPrice ? inpError : inp}
@@ -42,6 +43,7 @@ export default function StepPricing({
 
           <Field label="Profit %" hint="Markup on cost">
             <input
+              data-testid="wizard-profitPercent"
               type="number" min="0" step="0.1" value={form.profitPercent}
               onChange={(e) => upd('profitPercent', e.target.value)}
               placeholder="30" className={inp}
@@ -53,6 +55,7 @@ export default function StepPricing({
             <input
               type="number" min="0" step="0.01" value={form.price}
               onChange={(e) => upd('price', e.target.value)}
+              data-testid="wizard-price"
               placeholder="1300" className={errors.price ? inpError : inp}
             />
           </Field>

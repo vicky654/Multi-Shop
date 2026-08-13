@@ -1,5 +1,8 @@
 const Product = require('./product.model');
+const Shop    = require('../shops/shop.model');
 const { normalizeProductPayload } = require('./product.normalize');
+const { toCsv, toXlsx, exportFilename, MIME } = require('../../utils/exportFile');
+const { COLUMNS, IMPORT_COLUMNS, IMPORT_HEADER, productToRow, parseVariants, colorToHex } = require('./product.schema');
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 const buildFilter = (user, shopId, query) => {
@@ -192,90 +195,159 @@ const getPublicCategories = async (shopId) => {
 };
 
 // ── Bulk CSV Import ───────────────────────────────────────────────────────────
-const importProducts = async (user, records) => {
+
+/**
+ * Read a numeric cell.
+ *
+ * `Number('')` is 0 and `!row.price` is true for a legitimate 0, so the previous
+ * `!row.price || isNaN(...)` rejected a genuinely free item as "missing price"
+ * and turned a blank cell into 0. Absent and zero are different answers here.
+ *
+ * @returns {{ok:true, value:number|null}|{ok:false}} value null = cell was blank
+ */
+const numCell = (raw) => {
+  if (raw === undefined || raw === null || String(raw).trim() === '') return { ok: true, value: null };
+  // Tolerate what people actually paste out of Excel: ₹, thousands separators,
+  // a trailing %, and stray spaces. Rejecting these produced "invalid price"
+  // on files that looked perfectly fine to the owner.
+  const cleaned = String(raw).replace(/[₹,\s%]/g, '');
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? { ok: true, value: n } : { ok: false };
+};
+
+const strCell = (raw) => (raw === undefined || raw === null ? '' : String(raw).trim());
+
+/**
+ * Import product rows.
+ *
+ * @param {object} user
+ * @param {Array<object>} records  parsed CSV rows (headers already BOM-stripped)
+ * @param {string|null} [targetShopId]  shop to import into — the shop the owner
+ *   is actually looking at. Previously omitted, so every import landed in
+ *   `user.shops[0]`: an owner viewing their second shop silently filled their
+ *   first one. A row-level `shopId` column still wins, for multi-shop files.
+ */
+const importProducts = async (user, records, targetShopId = null) => {
   let successCount = 0;
   let failedCount  = 0;
   const errors     = [];
+  const created    = [];
+
+  // Barcodes seen in THIS file. Without it, two rows sharing a barcode both pass
+  // the DB check (neither is committed yet) and the second fails on the unique
+  // index with a raw Mongo error instead of a readable row message.
+  const seenBarcodes = new Set();
 
   for (let i = 0; i < records.length; i++) {
     const row = records[i];
     const rowNum = i + 2; // 1-based + header row
+    const rowErr = (error) => { errors.push({ row: rowNum, field: strCell(row.name), error }); failedCount += 1; };
 
-    // Validate required fields
-    if (!row.name || !row.name.trim()) {
-      errors.push({ row: rowNum, error: 'Missing required field: name' });
-      failedCount++;
-      continue;
-    }
-    if (!row.price || isNaN(Number(row.price))) {
-      errors.push({ row: rowNum, field: row.name, error: 'Missing or invalid field: price' });
-      failedCount++;
-      continue;
-    }
-    if (!row.costPrice || isNaN(Number(row.costPrice))) {
-      errors.push({ row: rowNum, field: row.name, error: 'Missing or invalid field: costPrice' });
-      failedCount++;
-      continue;
-    }
-    if (!row.category || !row.category.trim()) {
-      errors.push({ row: rowNum, field: row.name, error: 'Missing required field: category' });
-      failedCount++;
-      continue;
-    }
+    const name = strCell(row.name);
+    if (!name)                 { rowErr('Missing required field: name'); continue; }
+    const category = strCell(row.category);
+    if (!category)             { rowErr('Missing required field: category'); continue; }
 
-    // Resolve shopId: use row value if super_admin, else fall back to user's first shop
-    const shopId = row.shopId || (user.shops && user.shops[0]?.toString());
-    if (!shopId) {
-      errors.push({ row: rowNum, field: row.name, error: 'No shopId provided or assigned' });
-      failedCount++;
-      continue;
-    }
+    const price = numCell(row.price);
+    if (!price.ok || price.value === null) { rowErr('Missing or invalid field: price'); continue; }
+    if (price.value < 0)       { rowErr('price cannot be negative'); continue; }
+
+    const cost = numCell(row.costPrice);
+    if (!cost.ok || cost.value === null)   { rowErr('Missing or invalid field: costPrice'); continue; }
+    if (cost.value < 0)        { rowErr('costPrice cannot be negative'); continue; }
+
+    const shopId = row.shopId || targetShopId || (user.shops && user.shops[0]?.toString());
+    if (!shopId)               { rowErr('No shopId provided or assigned'); continue; }
 
     if (user.role !== 'super_admin' && !user.shops.some((s) => s.toString() === shopId.toString())) {
-      errors.push({ row: rowNum, field: row.name, error: 'No access to shopId: ' + shopId });
-      failedCount++;
-      continue;
+      rowErr('No access to shopId: ' + shopId); continue;
     }
 
-    // Prevent duplicate barcode within the same shop
-    if (row.barcode && row.barcode.trim()) {
-      const existing = await Product.findOne({ barcode: row.barcode.trim(), shopId, isActive: true });
-      if (existing) {
-        errors.push({ row: rowNum, field: row.name, error: `Duplicate barcode: ${row.barcode}` });
-        failedCount++;
-        continue;
-      }
+    // Variant matrix, if the row carries one.
+    const { cells, errors: vErrors } = parseVariants(row.variants);
+    if (vErrors.length)        { rowErr(`Invalid variants — ${vErrors.join('; ')}`); continue; }
+
+    const barcode = strCell(row.barcode);
+    if (barcode) {
+      if (seenBarcodes.has(barcode)) { rowErr(`Duplicate barcode within this file: ${barcode}`); continue; }
+      const existing = await Product.findOne({ barcode, shopId, isActive: true }).lean();
+      if (existing)            { rowErr(`Duplicate barcode: ${barcode}`); continue; }
+    }
+
+    const discount = numCell(row.discount);
+    if (!discount.ok)          { rowErr('Invalid field: discount'); continue; }
+    const gst = numCell(row.gstRate);
+    if (!gst.ok)               { rowErr('Invalid field: gstRate'); continue; }
+    const stockCell = numCell(row.stock);
+    if (!stockCell.ok)         { rowErr('Invalid field: stock'); continue; }
+    const threshold = numCell(row.lowStockThreshold);
+    if (!threshold.ok)         { rowErr('Invalid field: lowStockThreshold'); continue; }
+
+    const payload = {
+      name,
+      category,
+      subCategory:       strCell(row.subCategory),
+      brand:             strCell(row.brand),
+      price:             price.value,
+      costPrice:         cost.value,
+      discount:          discount.value === null ? 0 : Math.min(100, Math.max(0, discount.value)),
+      stock:             stockCell.value === null ? 0 : Math.max(0, stockCell.value),
+      unit:              strCell(row.unit) || 'pcs',
+      description:       strCell(row.description),
+      lowStockThreshold: threshold.value === null ? 10 : Math.max(0, threshold.value),
+      shopId,
+      ownerId:           user._id,
+    };
+    if (barcode) payload.barcode = barcode;
+    const sku = strCell(row.sku);
+    if (sku) payload.sku = sku;
+    // Blank gstRate stays unset so the shop default applies; an explicit 0 is
+    // kept, because a zero-rated product is a real thing.
+    if (gst.value !== null) payload.gstRate = Math.min(100, Math.max(0, gst.value));
+
+    // Route variants through the same normaliser the wizard uses, so the
+    // stock === sum(variantStock) invariant holds for imported products too.
+    if (cells.length) {
+      payload.trackVariantStock = true;
+      payload.variantStock = cells;
+      payload.sizes  = [...new Set(cells.map((c) => c.size).filter(Boolean))];
+      // hex is required by the model; the CSV only carries a name, so resolve it.
+      payload.colors = [...new Set(cells.map((c) => c.color).filter(Boolean))]
+        .map((n) => ({ name: n, hex: colorToHex(n) }));
     }
 
     try {
-      await Product.create({
-        name:              row.name.trim(),
-        category:          row.category.trim(),
-        subCategory:       row.subCategory?.trim() || '',
-        price:             Number(row.price),
-        costPrice:         Number(row.costPrice),
-        discount:          row.discount ? Math.min(100, Math.max(0, Number(row.discount))) : 0,
-        stock:             row.stock ? Number(row.stock) : 0,
-        barcode:           row.barcode?.trim() || undefined,
-        sku:               row.sku?.trim()     || undefined,
-        unit:              row.unit?.trim()    || 'pcs',
-        description:       row.description?.trim() || '',
-        lowStockThreshold: row.lowStockThreshold ? Number(row.lowStockThreshold) : 10,
-        shopId,
-        ownerId:           user._id,
-      });
+      const doc = await Product.create(normalizeProductPayload(payload, {}));
+      created.push(doc._id);
       successCount++;
     } catch (err) {
-      errors.push({ row: rowNum, field: row.name, error: err.message });
-      failedCount++;
+      rowErr(err.message);
     }
   }
 
-  return { successCount, failedCount, errors };
+  return { successCount, failedCount, errors, created };
 };
 
-// ── Export All Products to CSV ────────────────────────────────────────────────
-const exportAllProducts = async (user, shopId) => {
+// ── Export All Products ───────────────────────────────────────────────────────
+/**
+ * Export products as CSV or XLSX.
+ *
+ * Tenant scoping note: `shopAccess` middleware already validates any supplied
+ * `shopId` against `req.user.shops` before this runs, so an explicit shopId is
+ * safe to trust here. With no shopId we still restrict non-super-admins to their
+ * own shops — the export must never be a way to read another tenant's catalogue.
+ *
+ * Columns, derived values and variant packing all come from product.schema.js,
+ * which the importer and the sample file share, so the three cannot drift.
+ *
+ * @param {object} user
+ * @param {string|null} shopId
+ * @param {'csv'|'xlsx'} [format='csv']
+ * @returns {Promise<{buffer:Buffer, filename:string, contentType:string, count:number}>}
+ */
+const exportAllProducts = async (user, shopId, format = 'csv') => {
+  const fmt = format === 'xlsx' ? 'xlsx' : 'csv';
+
   const filter = { isActive: true };
   if (shopId) {
     filter.shopId = shopId;
@@ -283,30 +355,94 @@ const exportAllProducts = async (user, shopId) => {
     filter.shopId = { $in: user.shops };
   }
 
-  const products = await Product.find(filter).sort({ createdAt: -1 }).lean();
+  // Oldest-first: a spreadsheet reads naturally in the order the shop grew, and
+  // it keeps the file stable between exports for diffing.
+  const products = await Product.find(filter).sort({ createdAt: 1 }).lean();
+  const rows = products.map(productToRow);
 
-  const header = ['name','category','subCategory','price','costPrice','discount','stock','barcode','sku','unit','description','lowStockThreshold'];
-  const rows   = [header.join(',')];
+  // Name the file after the shop when the export is scoped to one, so a
+  // downloads folder with several exports stays intelligible.
+  let shopName = '';
+  if (shopId) {
+    const shop = await Shop.findById(shopId).select('name').lean();
+    shopName = shop?.name || '';
+  }
+  const day = new Date().toISOString().slice(0, 10);
+  const filename = exportFilename('products', shopName, day, fmt);
 
-  products.forEach((p) => {
-    const row = [
-      `"${(p.name         || '').replace(/"/g, '""')}"`,
-      `"${(p.category     || '').replace(/"/g, '""')}"`,
-      `"${(p.subCategory  || '').replace(/"/g, '""')}"`,
-      p.price        ?? '',
-      p.costPrice    ?? '',
-      p.discount     ?? 0,
-      p.stock        ?? 0,
-      `"${(p.barcode      || '').replace(/"/g, '""')}"`,
-      `"${(p.sku          || '').replace(/"/g, '""')}"`,
-      `"${(p.unit         || 'pcs').replace(/"/g, '""')}"`,
-      `"${(p.description  || '').replace(/"/g, '""').replace(/\n/g, ' ')}"`,
-      p.lowStockThreshold ?? 10,
-    ];
-    rows.push(row.join(','));
-  });
+  const buffer = fmt === 'xlsx'
+    ? toXlsx(COLUMNS, rows, { sheetName: shopName ? `${shopName} products` : 'Products', totals: true })
+    : Buffer.from(toCsv(COLUMNS, rows, { totals: true }), 'utf8');
 
-  return { csv: rows.join('\n'), count: products.length };
+  return { buffer, filename, contentType: MIME[fmt], count: products.length };
+};
+
+// ── Sample Import File ────────────────────────────────────────────────────────
+
+/**
+ * Realistic sample rows for the downloadable import template.
+ *
+ * These are chosen to teach the format by example, and every one of them must
+ * import successfully — a test feeds this exact file back through
+ * `importProducts` and asserts 0 failures, so the sample can never become a
+ * file that the parser rejects.
+ *
+ * Deliberate coverage: a plain product, one with a discount and a barcode, a
+ * zero-GST item (proving 0 is honoured, not treated as blank), a variant product
+ * using the packed matrix form, and one with only the required columns filled.
+ */
+const SAMPLE_IMPORT_ROWS = [
+  {
+    name: 'Canvas Sneaker', category: 'Footwear', subCategory: 'Mens', brand: 'StepUp',
+    price: 1299, costPrice: 780, discount: 10, gstRate: 12, stock: 24, variants: '',
+    unit: 'pcs', barcode: '8901234567890', sku: 'FW-SNK-001', lowStockThreshold: 6,
+    description: 'Lace-up canvas sneaker, breathable lining',
+  },
+  {
+    name: 'Running Shoe', category: 'Footwear', subCategory: 'Mens', brand: 'StepUp',
+    price: 2499, costPrice: 1550, discount: 0, gstRate: 12, stock: '', variants: 'Blue:8:4; Blue:9:6; Black:8:3; Black:9:5',
+    unit: 'pcs', barcode: '8901234567891', sku: 'FW-RUN-002', lowStockThreshold: 4,
+    description: 'Variant example — stock is summed from the variants column (18)',
+  },
+  {
+    name: 'Cotton Socks (3 pack)', category: 'Accessories', subCategory: '', brand: '',
+    price: 249, costPrice: 120, discount: 0, gstRate: 5, stock: 60, variants: '',
+    unit: 'pack', barcode: '', sku: '', lowStockThreshold: 12,
+    description: '',
+  },
+  {
+    name: 'Shoe Care Kit', category: 'Accessories', subCategory: '', brand: 'StepUp',
+    price: 399, costPrice: 210, discount: 5, gstRate: 0, stock: 15, variants: '',
+    unit: 'box', barcode: '', sku: '', lowStockThreshold: 5,
+    description: 'gstRate 0 is honoured as genuinely zero-rated, not treated as blank',
+  },
+  {
+    name: 'Leather Belt', category: 'Accessories', subCategory: '', brand: '',
+    price: 799, costPrice: 400, discount: '', gstRate: '', stock: '', variants: '',
+    unit: '', barcode: '', sku: '', lowStockThreshold: '',
+    description: 'Only the four required columns are filled — the rest take defaults',
+  },
+];
+
+/**
+ * Build the sample import file.
+ *
+ * Only importable columns are included: putting the read-only calculated columns
+ * in a template invites the owner to fill them in and wonder why nothing happens.
+ *
+ * @param {'csv'|'xlsx'} [format='csv']
+ */
+const buildSampleImportFile = (format = 'csv') => {
+  const fmt = format === 'xlsx' ? 'xlsx' : 'csv';
+  const filename = `multishop-product-import-sample.${fmt}`;
+
+  const buffer = fmt === 'xlsx'
+    ? toXlsx(IMPORT_COLUMNS, SAMPLE_IMPORT_ROWS, { sheetName: 'Products', totals: false })
+    // No totals row here: a TOTAL line in a template would be re-imported as a
+    // product literally named "TOTAL".
+    : Buffer.from(toCsv(IMPORT_COLUMNS, SAMPLE_IMPORT_ROWS, { totals: false }), 'utf8');
+
+  return { buffer, filename, contentType: MIME[fmt], rowCount: SAMPLE_IMPORT_ROWS.length };
 };
 
 // ── Stock Adjustment (damage / theft / restock / audit correction) ────────────
@@ -466,6 +602,6 @@ module.exports = {
   getProducts, getProductById, createProduct, updateProduct,
   deleteProduct, getCategories, getLowStockProducts,
   getPublicProducts, getPublicProductById, getPublicCategories,
-  importProducts, exportAllProducts, bulkDeleteProducts,
+  importProducts, exportAllProducts, buildSampleImportFile, bulkDeleteProducts,
   adjustStock, bulkAuditAdjust,
 };

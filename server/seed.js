@@ -21,7 +21,7 @@ const Notification = require('./src/modules/notifications/notification.model');
 // ── Config ────────────────────────────────────────────────────────
 // Honour test mode so `npm run seed:test` populates the dedicated test database
 // (and never silently reseeds — i.e. wipes — production).
-const { resolveUri } = require('./src/config/db');
+const { resolveUri, connectWithDnsFallback } = require('./src/config/db');
 const MONGO_URI = resolveUri().uri;
 const CLEAR     = !process.argv.includes('--no-clear');
 
@@ -82,7 +82,10 @@ async function main() {
   console.log('║   MultiShop Database Seed  v3.0          ║');
   console.log('╚══════════════════════════════════════════╝\n');
 
-  await mongoose.connect(MONGO_URI);
+  // Uses the shared connector so a flaky Atlas SRV lookup retries through public
+  // resolvers, exactly as the server does. Connecting directly here meant a
+  // hand-run seed failed outright on `querySrv ESERVFAIL`.
+  await connectWithDnsFallback(MONGO_URI);
   console.log('🔌 Connected to MongoDB\n');
 
   // ── 1. Clear existing data ──────────────────────────────────────

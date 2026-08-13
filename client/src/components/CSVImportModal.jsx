@@ -3,6 +3,10 @@ import { Upload, FileText, AlertCircle, CheckCircle2, X, ChevronDown } from 'luc
 import Modal from './Modal';
 import { productsApi } from '../api/products.api';
 import toast from 'react-hot-toast';
+// Column lists come from the shared mirror, not hardcoded here — the previous
+// hardcoded list had gone stale and showed owners the wrong format. A server-side
+// test asserts this mirror matches the real importer.
+import { REQUIRED_COLS, OPTIONAL_COLS, COLUMN_NOTES } from '../constants/importSchema';
 
 // Parse CSV text into array-of-objects (header row = keys)
 function parseCSVPreview(text) {
@@ -20,11 +24,7 @@ function parseCSVPreview(text) {
   return { headers, rows };
 }
 
-// Required CSV columns info shown to users
-const REQUIRED_COLS = ['name', 'price', 'costPrice', 'category'];
-const OPTIONAL_COLS = ['subCategory', 'stock', 'barcode', 'sku', 'unit', 'discount', 'description', 'lowStockThreshold'];
-
-export default function CSVImportModal({ open, onClose, onSuccess }) {
+export default function CSVImportModal({ open, onClose, onSuccess, shopId }) {
   const [file,      setFile]      = useState(null);
   const [preview,   setPreview]   = useState(null);   // { headers, rows }
   const [progress,  setProgress]  = useState(0);      // 0-100
@@ -64,10 +64,29 @@ export default function CSVImportModal({ open, onClose, onSuccess }) {
   const onDragOver = (e) => { e.preventDefault(); setDragging(true); };
   const onDragLeave = () => setDragging(false);
 
+  // Same endpoint and same helper the Inventory toolbar button uses — one code
+  // path, so the file an owner gets here is byte-identical.
+  const [sampleBusy, setSampleBusy] = useState(false);
+  const downloadSample = async () => {
+    setSampleBusy(true);
+    try {
+      const { filename } = await productsApi.downloadImportSample('csv');
+      toast.success(`Sample saved: ${filename}`);
+    } catch (err) {
+      toast.error(err.message || 'Could not download the sample file');
+    } finally {
+      setSampleBusy(false);
+    }
+  };
+
   const handleUpload = async () => {
     if (!file) return;
     const fd = new FormData();
     fd.append('file', file);
+    // Target the shop the owner is viewing. Without this the server falls back to
+    // the user's FIRST shop, so a multi-shop owner silently imported into the
+    // wrong catalogue.
+    if (shopId) fd.append('shopId', shopId);
     setUploading(true);
     setProgress(0);
     try {
@@ -106,6 +125,10 @@ export default function CSVImportModal({ open, onClose, onSuccess }) {
             <span className="font-medium text-blue-900">Optional: </span>
             {OPTIONAL_COLS.join(', ')}
           </p>
+          {/* `variants` is the one column nobody guesses correctly. */}
+          <p className="text-[11px] mt-1.5 text-blue-700">
+            <span className="font-medium">variants: </span>{COLUMN_NOTES.variants}
+          </p>
         </div>
 
         {/* ── Drop zone ── */}
@@ -132,6 +155,19 @@ export default function CSVImportModal({ open, onClose, onSuccess }) {
             </div>
             <input ref={inputRef} type="file" accept=".csv" className="hidden"
               onChange={(e) => { loadFile(e.target.files[0]); e.target.value = ''; }} />
+
+            {/* The moment an owner needs the template is the moment they open this
+                dialog and wonder what the columns should be. stopPropagation is
+                required: the whole panel is a click-to-browse target. */}
+            <button
+              type="button"
+              data-testid="modal-download-sample"
+              onClick={(e) => { e.stopPropagation(); downloadSample(); }}
+              disabled={sampleBusy}
+              className="text-xs font-medium text-blue-600 hover:text-blue-700 underline decoration-dotted disabled:opacity-50"
+            >
+              {sampleBusy ? 'Preparing sample…' : 'Not sure about the format? Download a sample CSV'}
+            </button>
           </div>
         )}
 

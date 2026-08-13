@@ -137,6 +137,7 @@ export function CategoryCombobox({ value, onChange, categories, invalid }) {
     <div ref={boxRef} className="relative">
       <div className="relative">
         <input
+          data-testid="wizard-category"
           value={input}
           onChange={(e) => { setInput(e.target.value); onChange(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}

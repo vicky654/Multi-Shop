@@ -10,6 +10,8 @@ import { reportsApi } from '../api/reports.api';
 import useShopStore from '../store/shopStore';
 import StatCard from '../components/StatCard';
 import LoadingSpinner from '../components/LoadingSpinner';
+import HelpTooltip from '../components/HelpTooltip';
+import { TIPS } from '../constants/tooltips';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
@@ -60,7 +62,10 @@ export default function Reports() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Reports & Analytics</h1>
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            Reports &amp; Analytics
+            <HelpTooltip content={TIPS.reports} side="right" maxWidth={300} />
+          </h1>
           <p className="text-sm text-gray-500">{activeShop?.name || 'All shops'}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

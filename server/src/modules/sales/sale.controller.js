@@ -101,7 +101,42 @@ const publicCheckout = asyncHandler(async (req, res) => {
   success(res, { sale }, 'Order placed successfully', 201);
 });
 
+// ── Sample invoice ────────────────────────────────────────────────────────────
+/**
+ * A worked example invoice for the shop the owner is viewing, priced by the real
+ * GST engine using that shop's own GST settings.
+ *
+ * `?format=pdf` returns a downloadable PDF; the default JSON is rendered by the
+ * client through the same <InvoiceReceipt> component real bills use. Nothing is
+ * persisted: a sample must never enter sales, stock, reports or GST returns.
+ */
+const sampleInvoice = asyncHandler(async (req, res) => {
+  const Shop = require('../shops/shop.model');
+  const shopId = req.query.shopId || req.user.shops?.[0];
+  // shopAccess middleware has already validated shopId against req.user.shops.
+  const shop = shopId
+    ? await Shop.findById(shopId).select('name address phone gstNumber gstScheme gstMode stateCode invoiceRoundOff currency').lean()
+    : null;
+  if (!shop) throw Object.assign(new Error('Shop not found'), { status: 404 });
+
+  const { buildSampleInvoice } = require('./sampleInvoice');
+  const payload = buildSampleInvoice(shop);
+
+  if (String(req.query.format || '').toLowerCase() === 'pdf') {
+    const { renderInvoicePdf } = require('./invoicePdf');
+    const buffer = renderInvoicePdf(payload);
+    const filename = `sample-invoice-${(shop.name || 'shop').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Export-Filename', filename);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, X-Export-Filename');
+    return res.send(buffer);
+  }
+
+  return success(res, payload, 'Sample invoice generated');
+});
+
 module.exports = {
   create, getAll, getOne, refund, partialRefund, publicCheckout, bulkSync,
-  verifyUpi, cancelUpi, update,
+  verifyUpi, cancelUpi, update, sampleInvoice,
 };

@@ -99,16 +99,28 @@ const fallbackDnsServers = () =>
     .map((s) => s.trim())
     .filter(Boolean);
 
-const connectDB = async () => {
-  const { uri, mode, label } = resolveUri();
-  const options = {
+/**
+ * Connect, retrying through public resolvers if the SRV lookup fails.
+ *
+ * Extracted from connectDB so CLI scripts can use it too. seed.js used to call
+ * `mongoose.connect` directly and therefore had no fallback at all — which is
+ * backwards, because a hand-run seed is exactly where the flaky Atlas SRV lookup
+ * is most likely to be hit and most annoying (`querySrv ESERVFAIL`).
+ *
+ * @param {string} uri
+ * @param {object} [options]
+ */
+const connectWithDnsFallback = async (uri, options = {}) => {
+  const opts = {
     // Without this the driver waits 30s by default anyway, but being explicit
     // means a bad resolver surfaces predictably instead of appearing to hang.
     serverSelectionTimeoutMS: Number(process.env.DB_TIMEOUT_MS) || 30000,
+    ...options,
   };
 
   try {
-    await mongoose.connect(uri, options);
+    await mongoose.connect(uri, opts);
+    return;
   } catch (err) {
     const fallback = fallbackDnsServers();
     const retryable = uri.startsWith('mongodb+srv://')
@@ -124,9 +136,14 @@ const connectDB = async () => {
     console.warn(`   Retrying through [${fallback.join(', ')}] — override with DNS_SERVERS.`);
 
     dns.setServers(fallback);
-    await mongoose.connect(uri, options);
+    await mongoose.connect(uri, opts);
     console.log('✅ Connected after switching DNS resolvers.');
   }
+};
+
+const connectDB = async () => {
+  const { uri, mode, label } = resolveUri();
+  await connectWithDnsFallback(uri);
 
   console.log(
     `📦 MongoDB connected: ${mongoose.connection.host} / ${mongoose.connection.name}` +
@@ -136,6 +153,7 @@ const connectDB = async () => {
 };
 
 module.exports = connectDB;
+module.exports.connectWithDnsFallback = connectWithDnsFallback;
 module.exports.resolveUri = resolveUri;
 module.exports.looksLikeDnsFailure = looksLikeDnsFailure;
 module.exports.fallbackDnsServers = fallbackDnsServers;

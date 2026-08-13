@@ -45,7 +45,8 @@ router.use(shopAccess);
 router.get('/',           ctrl.getAll);
 router.get('/low-stock',  ctrl.lowStock);
 router.get('/categories', ctrl.categories);
-router.get('/export',     ctrl.exportCSV);          // ← full CSV export
+router.get('/export',        ctrl.exportCSV);        // ← CSV or XLSX (?format=)
+router.get('/import-sample', ctrl.sampleImportFile); // ← downloadable template
 router.get('/:id',        ctrl.getOne);
 
 router.post(

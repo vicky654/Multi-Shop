@@ -20,7 +20,14 @@ api.interceptors.request.use((config) => {
 
 // Handle responses + errors globally
 api.interceptors.response.use(
-  (res) => res.data,
+  (res) => {
+    // File downloads need the whole response, not just the body. Unwrapping to
+    // res.data throws away the headers — including Content-Disposition, which
+    // carries the server's filename. Without it the caller has to invent one,
+    // which is how exports were landing as `products-1786606512696.csv`.
+    if (res.config?.responseType === 'blob') return res;
+    return res.data;
+  },
   (err) => {
     // Don't redirect to /login when the failing request IS the login/register call —
     // that would cause a silent page reload instead of showing the error toast.

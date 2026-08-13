@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useMemo, useState } from 'react';
-import { ShoppingCart, Calendar, User, Percent, StickyNote, LayoutGrid } from 'lucide-react';
+import { ShoppingCart, Calendar, User, Percent, StickyNote, LayoutGrid, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 // ── Custom Hooks ─────────────────────────────────────────────────────────────
@@ -28,6 +28,9 @@ import DailyClosingModal from '../components/billing/DailyClosingModal';
 import UpiQrModal from '../components/billing/UpiQrModal';
 import { isUpiReady } from '../utils/upi';
 import { useIsDesktop } from '../hooks/useMediaQuery';
+import HelpTooltip from '../components/HelpTooltip';
+import { TIPS } from '../constants/tooltips';
+import { salesApi } from '../api/sales.api';
 
 export default function Billing() {
   const { activeShop } = useShopStore();
@@ -164,6 +167,20 @@ export default function Billing() {
     grandTotal, discountMode, isOnline, can, validatePayment, saveOffline, upiEnabled,
     clearCart, resetPayment, clearForm, createSaleMut, setLastSale, setShowInvoice,
   ]);
+
+  // ── Sample bill (real invoice structure, never persisted) ──
+  const [sampleBillBusy, setSampleBillBusy] = useState(false);
+  const handleSampleBill = useCallback(async () => {
+    setSampleBillBusy(true);
+    try {
+      const { filename } = await salesApi.downloadSampleInvoicePdf(shopId);
+      toast.success(`Sample invoice saved: ${filename}`);
+    } catch (err) {
+      toast.error(err.message || 'Could not generate the sample invoice');
+    } finally {
+      setSampleBillBusy(false);
+    }
+  }, [shopId]);
 
   // ── 3. Hold and Resume ──
   // The snapshot captures the COMPLETE bill: line items with their prices,
@@ -314,6 +331,23 @@ export default function Billing() {
             <span className="text-xs font-semibold text-gray-400 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-lg truncate">{activeShop?.name}</span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {/* Sample invoice: the real invoice layout, priced by the real GST
+                engine from this shop's own settings, so a new owner can see what
+                their bill will look like before raising a real one. Never
+                persisted — it cannot reach sales, stock or GST returns. */}
+            <HelpTooltip content={TIPS.sampleBill} side="bottom" maxWidth={300}>
+              <button
+                onClick={handleSampleBill}
+                disabled={sampleBillBusy}
+                data-testid="download-sample-bill"
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 border border-blue-200 text-blue-700 bg-blue-50 rounded-xl text-xs hover:bg-blue-100 disabled:opacity-50 font-bold transition"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">
+                  {sampleBillBusy ? 'Preparing…' : 'Sample Bill'}
+                </span>
+              </button>
+            </HelpTooltip>
             <button
               onClick={() => setShowDailyClose(true)}
               title="Close Day"

@@ -7,6 +7,10 @@ export default defineConfig({
 
     // ── Spec discovery ──────────────────────────────────────────────────────────
     specPattern:    'cypress/e2e/**/*.cy.{js,jsx}',
+    // Guide recordings are a separate concern with their own config (video on,
+    // no retries, slow pacing). Without this exclusion `npm run cy:run` would
+    // execute all eight of them on every regression run.
+    excludeSpecPattern: 'cypress/e2e/guides/**',
     supportFile:    'cypress/support/e2e.js',
     fixturesFolder: 'cypress/fixtures',
 

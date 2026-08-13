@@ -23,7 +23,9 @@
     "cy:run:pos": "node scripts/cypress.mjs run --spec \"cypress/e2e/{01,02,03,04,05,06,07,08,09,10,11,12,13}-*.cy.js\"",
     "cy:run:wizard": "node scripts/cypress.mjs run --spec \"cypress/e2e/{15,16}-*.cy.js\"",
     "cy:run:all": "node scripts/cypress.mjs run",
-    "cy:verify": "node scripts/cypress.mjs verify"
+    "cy:verify": "node scripts/cypress.mjs verify",
+    "guides:record": "node scripts/cypress.mjs run --config-file cypress.guides.config.js",
+    "guides:publish": "node scripts/publishGuides.mjs"
   },
   "dependencies": {
     "@capacitor/push-notifications": "^8.0.2",

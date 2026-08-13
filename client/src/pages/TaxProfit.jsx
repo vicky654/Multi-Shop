@@ -8,6 +8,8 @@ import { taxApi } from '../api/tax.api';
 import useShopStore from '../store/shopStore';
 import { formatINR } from '../utils/format';
 import ExpenseClassifier from '../components/tax/ExpenseClassifier';
+import HelpTooltip from '../components/HelpTooltip';
+import { TIPS } from '../constants/tooltips';
 
 /**
  * Tax & Profit — legal tax optimisation and accounting.
@@ -69,7 +71,10 @@ export default function TaxProfit() {
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Tax &amp; Profit</h1>
+          <h1 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
+            Tax &amp; Profit
+            <HelpTooltip content={TIPS.taxProfit} side="right" maxWidth={320} />
+          </h1>
           <p className="text-sm text-gray-500">
             {activeShop?.name} · Financial year {s.period.financialYear}
           </p>

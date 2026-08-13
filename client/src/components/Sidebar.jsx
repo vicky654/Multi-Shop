@@ -5,7 +5,7 @@ import {
   Receipt, BarChart2, Settings, X, Store, ExternalLink,
   Zap, FlaskConical, UserCog, UserCheck, Shield, CheckCircle, Circle,
   ChevronRight, ChevronLeft, Sparkles, BookOpen, Megaphone, Activity, PanelLeftClose, PanelLeftOpen,
-  ClipboardList, Bot, Landmark, Truck,
+  ClipboardList, Bot, Landmark, Truck, Rocket,
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import useShopStore  from '../store/shopStore';
@@ -18,6 +18,8 @@ import AppFlowGuide from './AppFlowGuide';
 // ── Navigation items ───────────────────────────────────────────────────────────
 const NAV = [
   { to: '/dashboard',   icon: LayoutDashboard, label: 'Dashboard',   perm: 'dashboard'  },
+  // First entry after Dashboard: a new owner should not have to hunt for it.
+  { to: '/get-started', icon: Rocket,          label: 'Get Started', perm: 'dashboard'  },
   { to: '/inventory',   icon: Package,         label: 'Inventory',   perm: 'inventory',  tour: 'nav-inventory' },
   { to: '/billing',     icon: ShoppingCart,    label: 'Billing',     perm: 'billing',    tour: 'nav-billing'   },
   { to: '/orders',      icon: ClipboardList,   label: 'Orders',      perm: 'billing'    },

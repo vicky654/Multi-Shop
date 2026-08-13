@@ -123,24 +123,62 @@ const importCSV = asyncHandler(async (req, res) => {
   await new Promise((resolve, reject) => {
     const readable = stream.Readable.from(req.file.buffer);
     readable
-      .pipe(csv())
+      // Excel-authored CSVs — and our own export — begin with a UTF-8 BOM. Left
+      // in place, csv-parser names the first header "﻿name", so `row.name`
+      // is undefined and EVERY row fails as "Missing required field: name".
+      // Also trim header whitespace, since "price " is a normal Excel artifact.
+      .pipe(csv({
+        mapHeaders: ({ header }) => header
+          .replace(/^﻿/, '')        // UTF-8 BOM (Excel and our own export)
+          .replace(/^"+|"+$/g, '')       // stray quotes a BOM can hide from the parser
+          .trim(),
+      }))
       .on('data', (row) => records.push(row))
       .on('end', resolve)
       .on('error', reject);
   });
 
-  const result = await productService.importProducts(req.user, records);
+  // Import into the shop the owner is looking at, not blindly into their first
+  // shop. shopAccess middleware has already validated this shopId.
+  const targetShopId = req.body?.shopId || req.query.shopId || null;
+  const result = await productService.importProducts(req.user, records, targetShopId);
   logAction(req, LOG_ACTIONS.PRODUCT_BULK_IMPORT, 'products', `CSV import complete: ${result.successCount} success, ${result.failedCount} failed`);
   success(res, result, `Import complete: ${result.successCount} added, ${result.failedCount} failed`, 200);
 });
 
-// ── Export All Products to CSV ────────────────────────────────────────────────
+// ── Export All Products (CSV or XLSX) ─────────────────────────────────────────
 const exportCSV = asyncHandler(async (req, res) => {
   const shopId = req.query.shopId || null;
-  const { csv, count } = await productService.exportAllProducts(req.user, shopId);
-  res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', `attachment; filename="products-${Date.now()}.csv"`);
-  res.send(csv);
+  const format = String(req.query.format || 'csv').toLowerCase();
+  const { buffer, filename, contentType, count } =
+    await productService.exportAllProducts(req.user, shopId, format);
+
+  res.setHeader('Content-Type', contentType);
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  // Let the browser read the filename and the row count off a cross-origin
+  // response — without this the client cannot see either and has to invent a
+  // filename, which is how `products-1786606512696.csv` happened.
+  res.setHeader('X-Export-Count', String(count));
+  res.setHeader('X-Export-Filename', filename);
+  res.setHeader('Access-Control-Expose-Headers',
+    'Content-Disposition, X-Export-Count, X-Export-Filename');
+  res.send(buffer);
+});
+
+// ── Download Sample Import File ───────────────────────────────────────────────
+/**
+ * The sample uses the exact production import schema and real importable values,
+ * so an owner can download it, edit it, and upload it straight back. A test
+ * round-trips this file through the importer, so it cannot drift from the parser.
+ */
+const sampleImportFile = asyncHandler(async (req, res) => {
+  const format = String(req.query.format || 'csv').toLowerCase();
+  const { buffer, filename, contentType } = productService.buildSampleImportFile(format);
+  res.setHeader('Content-Type', contentType);
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('X-Export-Filename', filename);
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, X-Export-Filename');
+  res.send(buffer);
 });
 
 // ── Bulk Delete ───────────────────────────────────────────────────────────────
@@ -173,6 +211,6 @@ const bulkAuditAdjust = asyncHandler(async (req, res) => {
 module.exports = {
   getAll, getOne, create, update, remove, categories, lowStock,
   getPublic, getPublicOne, getPublicCategories,
-  importCSV, exportCSV, bulkDelete, analyzeImage,
+  importCSV, exportCSV, sampleImportFile, bulkDelete, analyzeImage,
   adjustStock, bulkAuditAdjust,
 };

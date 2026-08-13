@@ -66,6 +66,19 @@ export function ProductWizard({
     if (rawIdx === -1) setStep(1);
   }, [rawIdx]);
 
+  // Commit the active shop into the form when the form has no shop of its own.
+  //
+  // The Shop select DISPLAYS `form.shopId || shopId`, but validation and
+  // toPayload read `form.shopId` alone. So whenever form.shopId was empty the
+  // dropdown showed the active shop while the form was still invalid, and Next
+  // sat disabled with "Select which shop this belongs to" against a field that
+  // looked correctly filled. A restored autosave draft is the usual way to end up
+  // in that state. Writing the effective value once makes what is shown and what
+  // is validated the same thing.
+  useEffect(() => {
+    if (!form.shopId && shopId) setForm((f) => ({ ...f, shopId }));
+  }, [form.shopId, shopId, setForm]);
+
   const goTo = (n) => {
     setStep(n);
     setVisited((v) => new Set(v).add(n));

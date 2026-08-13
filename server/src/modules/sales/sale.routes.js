@@ -37,6 +37,8 @@ router.post('/public/checkout', ctrl.publicCheckout);
 router.use(protect);
 
 router.get('/',     shopAccess, ctrl.getAll);
+// MUST precede '/:id', or "sample-invoice" is parsed as a sale id and 404s.
+router.get('/sample-invoice', shopAccess, ctrl.sampleInvoice);
 router.get('/:id',             ctrl.getOne);   // shopAccess enforced inside getSaleById
 router.post('/',    shopAccess, allowRoles('super_admin', 'owner', 'manager', 'billing_staff'), idempotency, validateSale, ctrl.create);
 

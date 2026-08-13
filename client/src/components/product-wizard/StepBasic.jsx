@@ -60,6 +60,7 @@ export default function StepBasic({ form, upd, errors, shops, shopId, categories
             <input ref={photoRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoAnalyze} />
           </div>
           <input
+            data-testid="wizard-name"
             value={form.name}
             onChange={(e) => upd('name', e.target.value)}
             placeholder="e.g. Men's Running Shoes"
@@ -79,7 +80,7 @@ export default function StepBasic({ form, upd, errors, shops, shopId, categories
           </Field>
 
           <Field label="Brand" hint="e.g. Nike, Bata — used in search">
-            <input value={form.brand} onChange={(e) => upd('brand', e.target.value)}
+            <input data-testid="wizard-brand" value={form.brand} onChange={(e) => upd('brand', e.target.value)}
               placeholder="Brand name" className={inp} />
           </Field>
 

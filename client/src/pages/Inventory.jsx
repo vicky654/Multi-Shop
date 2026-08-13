@@ -4,7 +4,7 @@ import {
   Plus, Search, Edit2, Trash2, AlertTriangle,
   Download, RefreshCw, Upload, Copy, Barcode,
   CheckSquare, Square, X as XIcon, Package, ScanLine,
-  ClipboardCheck, SlidersHorizontal,
+  ClipboardCheck, SlidersHorizontal, FileSpreadsheet, FileDown,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -22,6 +22,8 @@ import MiniTip from '../components/MiniTip';
 import StockAdjustModal from '../components/StockAdjustModal';
 import StockAuditPanel  from '../components/StockAuditPanel';
 import { formatDiscountPct } from '../utils/format';
+import HelpTooltip from '../components/HelpTooltip';
+import { TIPS } from '../constants/tooltips';
 
 // ── Mobile product card ───────────────────────────────────────────────────────
 function ProductCard({ product: p, isSelected, onSelect, onEdit, onDuplicate, onDelete }) {
@@ -310,12 +312,39 @@ export default function Inventory() {
   };
 
   // ── Export (server-side, all products) ────────────────────────────────────────
-  const handleExport = async () => {
+  // `busy` disables the buttons during a download: a second click while the first
+  // request is in flight produces two saves of the same file.
+  const [exportBusy, setExportBusy] = useState('');
+
+  const handleExport = async (format) => {
+    setExportBusy(format);
     try {
-      await productsApi.exportCSV({ shopId });
-      toast.success('Export downloaded');
-    } catch {
-      toast.error('Export failed');
+      const { filename, count } = await productsApi.exportProducts({ shopId }, format);
+      // Report what actually landed on disk, so an unexpectedly empty or partial
+      // export is visible immediately rather than looking like success.
+      toast.success(
+        count === 0
+          ? `No products to export — ${filename} contains only the column headers`
+          : `${count} product${count === 1 ? '' : 's'} → ${filename}`
+      );
+    } catch (err) {
+      // Surface the server's real reason (permission, missing shop) instead of
+      // a blanket "Export failed".
+      toast.error(err.message || 'Export failed');
+    } finally {
+      setExportBusy('');
+    }
+  };
+
+  const handleSampleDownload = async () => {
+    setExportBusy('sample');
+    try {
+      const { filename } = await productsApi.downloadImportSample('csv');
+      toast.success(`Sample saved: ${filename} — edit it and upload with Import CSV`);
+    } catch (err) {
+      toast.error(err.message || 'Could not download the sample file');
+    } finally {
+      setExportBusy('');
     }
   };
 
@@ -445,29 +474,65 @@ export default function Inventory() {
           <p className="text-sm text-gray-500">{products.length} products</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button onClick={handleExport}
-            className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-600 hover:bg-gray-50 rounded-lg text-sm font-medium transition">
-            <Download className="w-4 h-4" /> Export
-          </button>
-          <button onClick={() => setShowImport(true)}
-            className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-600 hover:bg-gray-50 rounded-lg text-sm font-medium transition">
-            <Upload className="w-4 h-4" /> Import CSV
-          </button>
-          <button onClick={() => setShowBillScan(true)}
-            className="flex items-center gap-1.5 px-3 py-2 border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg text-sm font-medium transition">
-            <ScanLine className="w-4 h-4" /> Scan Bill
-          </button>
-          <button
-            onClick={() => setAuditMode((v) => !v)}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition border ${
-              auditMode
-                ? 'bg-amber-500 text-white border-amber-500 hover:bg-amber-600'
-                : 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
-            }`}
-          >
-            <ClipboardCheck className="w-4 h-4" />
-            {auditMode ? 'Exit Audit' : 'Stock Audit'}
-          </button>
+          {/* Tooltips explain what each action does AND why it is worth doing —
+              the second half is what a first-time owner is missing. Copy lives in
+              constants/tooltips.js so it reads identically everywhere. */}
+          <HelpTooltip content={TIPS.export} side="bottom" maxWidth={300}>
+            <button onClick={() => handleExport('csv')} disabled={!!exportBusy}
+              data-testid="export-csv"
+              className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50 rounded-lg text-sm font-medium transition">
+              <Download className="w-4 h-4" />
+              {exportBusy === 'csv' ? 'Exporting…' : 'Export CSV'}
+            </button>
+          </HelpTooltip>
+
+          <HelpTooltip content={TIPS.exportXlsx} side="bottom" maxWidth={300}>
+            <button onClick={() => handleExport('xlsx')} disabled={!!exportBusy}
+              data-testid="export-xlsx"
+              className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50 rounded-lg text-sm font-medium transition">
+              <FileSpreadsheet className="w-4 h-4" />
+              {exportBusy === 'xlsx' ? 'Exporting…' : 'Excel'}
+            </button>
+          </HelpTooltip>
+
+          <HelpTooltip content={TIPS.import} side="bottom" maxWidth={300}>
+            <button onClick={() => setShowImport(true)} data-testid="import-csv"
+              className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-600 hover:bg-gray-50 rounded-lg text-sm font-medium transition">
+              <Upload className="w-4 h-4" /> Import CSV
+            </button>
+          </HelpTooltip>
+
+          {/* Sits directly beside Import, because it is only useful in that context. */}
+          <HelpTooltip content={TIPS.importSample} side="bottom" maxWidth={300}>
+            <button onClick={handleSampleDownload} disabled={!!exportBusy}
+              data-testid="download-sample-import"
+              className="flex items-center gap-1.5 px-3 py-2 border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50 rounded-lg text-sm font-medium transition">
+              <FileDown className="w-4 h-4" />
+              {exportBusy === 'sample' ? 'Preparing…' : 'Sample File'}
+            </button>
+          </HelpTooltip>
+
+          <HelpTooltip content={TIPS.scanBill} side="bottom" maxWidth={300}>
+            <button onClick={() => setShowBillScan(true)} data-testid="scan-bill"
+              className="flex items-center gap-1.5 px-3 py-2 border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg text-sm font-medium transition">
+              <ScanLine className="w-4 h-4" /> Scan Bill
+            </button>
+          </HelpTooltip>
+
+          <HelpTooltip content={TIPS.stockAudit} side="bottom" maxWidth={300}>
+            <button
+              onClick={() => setAuditMode((v) => !v)}
+              data-testid="stock-audit"
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition border ${
+                auditMode
+                  ? 'bg-amber-500 text-white border-amber-500 hover:bg-amber-600'
+                  : 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
+              }`}
+            >
+              <ClipboardCheck className="w-4 h-4" />
+              {auditMode ? 'Exit Audit' : 'Stock Audit'}
+            </button>
+          </HelpTooltip>
           <button onClick={() => qc.invalidateQueries(['products'])}
             className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-600 hover:bg-gray-50 rounded-lg text-sm font-medium transition">
             <RefreshCw className="w-4 h-4" />
@@ -589,6 +654,7 @@ export default function Inventory() {
       {/* ── CSV Import Modal ── */}
       <CSVImportModal
         open={showImport}
+        shopId={shopId}
         onClose={() => setShowImport(false)}
         onSuccess={() => {
           qc.invalidateQueries(['products']);
